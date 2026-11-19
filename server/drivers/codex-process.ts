@@ -124,9 +124,32 @@ export function codexCliOverrides(cli: string): { cli: string; overrides: string
 }
 
 /** The launcher and argv for `app-server`: the user's overrides go first, so the driver's own
- * (guest confinement, tool surface) keep the last word. */
-export function codexLaunch(cli: string, appServerArgs: readonly string[]): [string, string[]] {
+ * (guest confinement, tool surface) keep the last word.
+ * `writableRoots` (a directory allowlist) caps the whole app-server process. Three layers would each
+ * undo it, so a restricted turn overrides all three (probed on real codex-cli 0.169.0: a $HOME write is
+ * then refused with "operation not permitted" while an allowlisted root and the workspace write):
+ * - a CLI preset's `--sandbox danger-full-access` (a Full access preset; a TUI-level flag, stripped so
+ *   the argv cannot shadow the policy);
+ * - the machine's `~/.codex/config.toml` `sandbox_mode` (overridden with
+ *   `-c sandbox_mode="workspace-write"` after the subcommand);
+ * - the allowlist itself rides `sandbox_workspace_write.writable_roots` for every thread this
+ *   app-server serves (thread/start takes no roots; turn/start's sandboxPolicy caps a running turn). */
+export function codexLaunch(cli: string, appServerArgs: readonly string[], writableRoots?: readonly string[]): [string, string[]] {
   const launch = codexCliOverrides(cli);
   const [subcommand, ...driverArgs] = appServerArgs;
-  return [launch.cli, [subcommand!, ...launch.overrides, ...driverArgs]];
+  if (!writableRoots?.length) return [launch.cli, [subcommand!, ...launch.overrides, ...driverArgs]];
+  const tokens = splitCliString(launch.cli);
+  const kept: string[] = [];
+  for (let index = 0; index < tokens.length; index++) {
+    const token = tokens[index]!;
+    if (token === "--sandbox") { index++; continue; } // the flag and its preset value go too
+    if (token.startsWith("--sandbox=")) continue;
+    kept.push(token);
+  }
+  const capped = ["-c", 'sandbox_mode="workspace-write"', "-c", `sandbox_workspace_write.writable_roots=${JSON.stringify([...writableRoots])}`];
+  // splitCliString has no escapes, so a word holding both quote kinds can't be written back; such a
+  // launcher keeps its flags (the -c overrides above still cap it — they land after the subcommand).
+  const quoted = kept.map((token) => !/[\s"']/.test(token) ? token : !token.includes('"') ? `"${token}"` : !token.includes("'") ? `'${token}'` : null);
+  if (quoted.includes(null)) return [launch.cli, [subcommand!, ...launch.overrides, ...capped, ...driverArgs]];
+  return [quoted.join(" "), [subcommand!, ...launch.overrides, ...capped, ...driverArgs]];
 }

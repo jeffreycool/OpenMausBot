@@ -16,13 +16,13 @@ describe("CodexDriver directory allowlist (fake app-server)", () => {
   let recorder: EventRecorder;
   let scratch: string;
 
-  const create = async (environment: Record<string, string> = {}) => {
+  const create = async (environment: Record<string, string> = {}, cli = FAKE_CLI) => {
     instance = await CodexDriver.create({
       instanceId: "codex-dir-access-test",
       displayName: "Codex Dir Access Test",
       environment: { HOME: scratch, CODEX_HOME: join(scratch, ".codex"), ...environment },
       enabled: true,
-      config: { cli: FAKE_CLI, fullAuto: false },
+      config: { cli, fullAuto: false },
     });
     recorder = recordEvents(instance.adapter);
   };
@@ -105,5 +105,39 @@ describe("CodexDriver directory allowlist (fake app-server)", () => {
     const calls = callsFrom(dump);
     expect(calls.find((call) => call.method === "thread/start")?.params.sandbox).toBe("danger-full-access");
     expect(calls.find((call) => call.method === "turn/start")?.params.sandboxPolicy).toEqual({ type: "dangerFullAccess" });
+  });
+
+  // codex-cli 0.169.0 runs a CLI preset's argv sandbox over the thread/turn sandboxPolicy, so a restricted
+  // turn relaunches the whole app-server workspace-write with the roots in config (probed on the real CLI:
+  // a $HOME write is then refused, an allowlisted root and the workspace write).
+  it("relaunches a danger-full-access preset workspace-write with the roots in config when restricted, and leaves the preset alone otherwise", async () => {
+    const roots = [join(scratch, "workspaces", "bot-a"), join(scratch, "task-workspaces", "bot-a")];
+    const preset = `${FAKE_CLI} --sandbox danger-full-access --ask-for-approval never`;
+    const dump = join(scratch, "argv-capped.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    await create({}, preset);
+    await instance.adapter.sendTurn({ threadId: "t-argv-capped", text: "Fixture", approvalMode: "full", writableDirs: roots });
+    await recorder.until((event) => event.type === "turn.completed");
+    expect(recorder.events.at(-1)).toMatchObject({ ok: true });
+    const { argv } = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
+    expect(argv).not.toContain("danger-full-access");
+    // -c overrides ride after `app-server` (the TUI-level --sandbox flag is a no-op there) and beat
+    // the machine's config.toml sandbox_mode.
+    const appServerAt = argv.indexOf("app-server");
+    expect(appServerAt).toBeGreaterThan(-1);
+    const modeAt = argv.indexOf('sandbox_mode="workspace-write"', appServerAt);
+    expect(modeAt).toBeGreaterThan(appServerAt);
+    expect(argv[modeAt - 1]).toBe("-c");
+    const rootsArg = argv.find((arg) => arg.includes("sandbox_workspace_write.writable_roots="));
+    expect(JSON.parse(rootsArg!.slice(rootsArg!.indexOf("sandbox_workspace_write.writable_roots=") + "sandbox_workspace_write.writable_roots=".length))).toEqual(roots);
+
+    const openDump = join(scratch, "argv-open.json");
+    process.env.FAKE_CODEX_DUMP = openDump;
+    const openTurn = await instance.adapter.sendTurn({ threadId: "t-argv-open", text: "Fixture", approvalMode: "full" });
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === openTurn.turnId, 30_000);
+    expect(recorder.events.at(-1)).toMatchObject({ ok: true });
+    const open = JSON.parse(readFileSync(openDump, "utf8")) as { argv: string[] };
+    expect(open.argv).toContain("danger-full-access");
+    expect(open.argv.some((arg) => arg.includes("sandbox_workspace_write.writable_roots=") || arg.includes('sandbox_mode="workspace-write"'))).toBe(false);
   });
 });

@@ -113,7 +113,7 @@ describe("bringing in another AI tool's setup through the desktop app's own serv
       if (bot === later) {
         // A dialog-made bot is directory-confined now (bot-dir-access): the harness adds exactly its own folders,
         // and the imported setup grants no directory of its own.
-        const added = told.argv.filter((arg: string, index: number) => told.argv[index - 1] === "--add-dir");
+        const added = told.argv.filter((_arg: string, index: number) => told.argv[index - 1] === "--add-dir");
         expect(added.length).toBeGreaterThan(0);
         for (const dir of added) {
           expect(dir.startsWith(join(fixture.info.dataDir, "workspaces", bot.id)) || dir.startsWith(join(fixture.info.dataDir, "task-workspaces", bot.id))).toBe(true);
