@@ -405,6 +405,23 @@ describe("BotListItem", () => {
     expect(markup).toContain("group-hover:pointer-events-auto");
     expect(markup).not.toContain("pr-[92px]");
   });
+
+  it("offers rename right on the row where the caller allows it, hidden until the row is hovered", () => {
+    const markup = renderToStaticMarkup(createElement(BotListItem, botRowProps(initialState, vi.fn(), bot(), { density: "comfortable", query: "", onMenu: vi.fn(), onRename: vi.fn() })));
+    expect(markup).toContain('data-bot-rename="atlas"');
+    expect(markup).toContain('aria-label="Rename"');
+    expect(markup).toContain('title="Rename"');
+    expect(markup).toContain("group-hover:inline-flex");
+  });
+
+  it("keeps the simple-mode row's rename affordance and drops it on icon rows and where renaming is withheld", () => {
+    const withIt = renderToStaticMarkup(createElement(BotListItem, botRowProps(initialState, vi.fn(), bot(), { density: "comfortable", query: "", onMenu: vi.fn(), onRename: vi.fn() })));
+    expect(withIt).toContain("data-bot-rename");
+    const icons = renderToStaticMarkup(createElement(BotListItem, botRowProps(initialState, vi.fn(), bot(), { density: "icons", query: "", onMenu: vi.fn(), onRename: vi.fn() })));
+    expect(icons).not.toContain("data-bot-rename");
+    const withheld = renderRow(bot());
+    expect(withheld).not.toContain("data-bot-rename");
+  });
 });
 
 describe("archive / delete confirmation", () => {

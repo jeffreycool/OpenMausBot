@@ -19,6 +19,7 @@ import { lastNonReceipt } from "@/lib/receipts";
 import { botPreview, groupPreview, lastLine } from "./sidebar-preview";
 import { activeLocale, t } from "@/lib/i18n"; import { isBotHeld } from "@/lib/bot-pause";
 import { copyText } from "@/lib/copy-text";
+import { mayRename, useTeamPeople, type TeamPeople } from "@/state/team-people";
 import type { LocaleKey } from "@/locales";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { BulkSelectFilters, ThreadListFooter, deleteThreadsInBulk, retitleThreadsInBulk, useBulkSelect } from "./BulkSelectBar";
@@ -660,6 +661,8 @@ export interface BotRowProps {
   query: string;
   dispatch: Dispatch<Action>;
   onMenu: (menu: MenuState) => void;
+  /** Set only where this person may rename the bot: its presence is the row's hover rename affordance. */
+  onRename?: (botId: string) => void;
   renameRequest?: number;
   botDrag?: BotRowDrag;
   botDrop?: BotDropPlace | null;
@@ -670,7 +673,7 @@ export function botRowProps<State extends Pick<AppState, "activeView" | "selecte
   state: State,
   dispatch: Dispatch<Action>,
   bot: Bot,
-  layout: Pick<BotRowProps, "density" | "query" | "onMenu" | "renameRequest" | "botDrag" | "botDrop" | "botDragging">,
+  layout: Pick<BotRowProps, "density" | "query" | "onMenu" | "onRename" | "renameRequest" | "botDrag" | "botDrop" | "botDragging">,
 ): BotRowProps {
   const selected = state.activeView === "chat" && state.selectedId === bot.id;
   const reveal = state.revealThread;
@@ -695,9 +698,13 @@ export function useVisibleMessages(bot: Bot): Message[] {
   return useMemo(() => visibleMessages({ messages, activeLeafId }), [messages, activeLeafId]);
 }
 
+/** The row's hover rename affordance follows the same gate as the bot menu's rename item. */
+const sidebarBotMayRename = (bot: Bot, team: TeamPeople | null, teamConfig: unknown): boolean =>
+  team ? mayRename(bot, team) : !teamConfig;
+
 export const BotListItem = memo(function BotListItem(props: BotRowProps) {
   const advanced = useAdvancedMode();
-  const { bot, selected, deleting, mascotMotion, reveal, pendingQueued, instances, liveCall, density, query, dispatch, onMenu, renameRequest, botDrag: drag, botDrop: drop, botDragging: dragging } = props;
+  const { bot, selected, deleting, mascotMotion, reveal, pendingQueued, instances, liveCall, density, query, dispatch, onMenu, onRename, renameRequest, botDrag: drag, botDrop: drop, botDragging: dragging } = props;
   const showThreads = useShowThreads();
   const liveMedia = useLiveMedia();
   const remoteClient = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
@@ -805,6 +812,12 @@ export const BotListItem = memo(function BotListItem(props: BotRowProps) {
               </Phone>
             )}
             {!renaming && <OwnBotHomeMark />}{!simpleList && title && !renaming && <SidebarBotRole role={title} />}
+            {!renaming && !deleting && !iconOnly && onRename && (
+              <button type="button" data-bot-rename={bot.id} aria-label={t("sidebar.bot.rename")} title={t("sidebar.bot.rename")}
+                onClick={(event) => { event.stopPropagation(); onRename(bot.id); }}
+                className="hidden size-4 shrink-0 items-center justify-center rounded text-ink-secondary hover:text-ink group-hover:inline-flex group-focus-within:inline-flex"
+              ><SquarePen size={12} /></button>
+            )}
           </span>
           {last && !renaming && !expanded && (
             <span className={cn(
@@ -933,10 +946,12 @@ export const Sidebar = memo(function Sidebar({ open, onClose, collapseToIcons = 
   const phone = useMediaQuery(PHONE_LAYOUT, false);
   const importReturnRef = useRef<HTMLButtonElement>(null);
   const sidebarRef = useRef<HTMLElement>(null);
+  const teamPeople = useTeamPeople();
   const [confirm, setConfirm] = useState<{ kind: BotConfirmKind; bot: Bot } | null>(null);
   const cancelConfirm = useCallback(() => setConfirm(null), []);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [renameRequest, setRenameRequest] = useState<{ botId: string; nonce: number } | null>(null);
+  const requestRename = useCallback((botId: string) => setRenameRequest((current) => ({ botId, nonce: (current?.nonce ?? 0) + 1 })), []);
   const [sectionPicker, setSectionPicker] = useState<MenuState | null>(null);
   const [newTeam, setNewTeam] = useState(false);
   const [teamMenu, setTeamMenu] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -1132,7 +1147,9 @@ export const Sidebar = memo(function Sidebar({ open, onClose, collapseToIcons = 
   const attention = crossBotAttentionThreads(state.bots, state.pendingQueued, undefined, state.groups);
   const pinnedThreads = crossBotPinnedThreads(state.bots, state.groups, state.pendingQueued);
   const pendingBotUndo = teamFeedback?.restoreBot;
-  const botRow = (bot: Bot) => botRowProps(state, dispatch, bot, { density, query: q, onMenu: setMenu, renameRequest: renameRequest?.botId === bot.id ? renameRequest.nonce : 0, ...drops.row(bot.id) });
+  const botRow = (bot: Bot) => botRowProps(state, dispatch, bot, { density, query: q, onMenu: setMenu,
+    onRename: sidebarBotMayRename(bot, teamPeople, state.config?.team) ? requestRename : undefined,
+    renameRequest: renameRequest?.botId === bot.id ? renameRequest.nonce : 0, ...drops.row(bot.id) });
   const railSearch = () => {
     if (collapseToIcons) return openCommandPalette();
     setSearchOpen(true);
@@ -1519,7 +1536,7 @@ export const Sidebar = memo(function Sidebar({ open, onClose, collapseToIcons = 
           }}
           onNewFolder={setNewFolderBotId}
           onNewTaskFolder={setNewTaskFolderBotId}
-          onRename={(botId) => setRenameRequest((current) => ({ botId, nonce: (current?.nonce ?? 0) + 1 }))}
+          onRename={requestRename}
           onNewSection={density === "icons" ? undefined : (botId) => botDrag.startNew([botId])}
         />
       {showThreads && newFolderBotId && state.bots.find((bot) => bot.id === newFolderBotId) && <BotProjectDialog bot={state.bots.find((bot) => bot.id === newFolderBotId)!} onClose={() => setNewFolderBotId(null)} />}
