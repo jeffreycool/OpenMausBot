@@ -83,17 +83,43 @@ describe("CodexDriver directory allowlist (fake app-server)", () => {
     expect(refused?.message).toContain("writable directories");
   });
 
-  it("accepts a report without any roots (an older codex derives its own list) and one whose root is the requested path through a link", async () => {
-    mkdirSync(join(scratch, "linked"), { recursive: true });
-    const requested = join(scratch, "linked");
-    await create({ FAKE_CODEX_RESOLVED_SANDBOX: JSON.stringify({ type: "workspaceWrite", writableRoots: [realpathSync(requested)] }) });
-    await instance.adapter.sendTurn({ threadId: "t-root-link", text: "Fixture", approvalMode: "ask", writableDirs: [requested] });
+  it("accepts containment echoes: the implicit-only answer codex-cli 0.169.0 really sends, a folded parent covering a nested request, and a link-resolved root; refuses a root beyond the request", async () => {
+    const parent = join(scratch, "task-workspaces", "bot-a");
+    const nested = join(parent, "thread-1");
+    const requested = [join(scratch, "workspaces", "bot-a"), parent, nested];
+
+    // The shape probed on real codex-cli 0.169.0 (native log fe285694): the echo carries only the implicit
+    // set, /private-normalized — none of the requested roots appear, yet the turn must start.
+    await create({ FAKE_CODEX_RESOLVED_SANDBOX: JSON.stringify({ type: "workspaceWrite", writableRoots: ["/private/tmp", `/private${tmpdir()}`] }) });
+    await instance.adapter.sendTurn({ threadId: "t-implicit-echo", text: "Fixture", approvalMode: "ask", writableDirs: requested });
     await recorder.until((event) => event.type === "turn.completed");
     expect(recorder.events.at(-1)).toMatchObject({ ok: true });
+
+    // The nested request folded into its covering parent, which is itself requested.
+    await create({ FAKE_CODEX_RESOLVED_SANDBOX: JSON.stringify({ type: "workspaceWrite", writableRoots: [join(scratch, "workspaces", "bot-a"), parent] }) });
+    await instance.adapter.sendTurn({ threadId: "t-folded", text: "Fixture", approvalMode: "ask", writableDirs: requested });
+    await recorder.until((event) => event.type === "turn.completed");
+    expect(recorder.events.at(-1)).toMatchObject({ ok: true });
+
+    // A requested root reported through a link still matches.
+    mkdirSync(join(scratch, "linked"), { recursive: true });
+    const linked = join(scratch, "linked");
+    await create({ FAKE_CODEX_RESOLVED_SANDBOX: JSON.stringify({ type: "workspaceWrite", writableRoots: [realpathSync(linked)] }) });
+    await instance.adapter.sendTurn({ threadId: "t-root-link", text: "Fixture", approvalMode: "ask", writableDirs: [linked] });
+    await recorder.until((event) => event.type === "turn.completed");
+    expect(recorder.events.at(-1)).toMatchObject({ ok: true });
+
     await create({ FAKE_CODEX_RESOLVED_SANDBOX: JSON.stringify({ type: "workspaceWrite", writableRoots: [] }) });
     await instance.adapter.sendTurn({ threadId: "t-root-quiet", text: "Fixture", approvalMode: "ask", writableDirs: [join(scratch, "workspaces", "bot-a")] });
     await recorder.until((event) => event.type === "turn.completed");
     expect(recorder.events.at(-1)).toMatchObject({ ok: true });
+
+    // A reported root neither implicit nor explained by the request: codex granted beyond the allowlist.
+    await create({ FAKE_CODEX_RESOLVED_SANDBOX: JSON.stringify({ type: "workspaceWrite", writableRoots: ["/private/tmp", join(scratch, "somewhere-else")] }) });
+    await instance.adapter.sendTurn({ threadId: "t-beyond", text: "Fixture", approvalMode: "ask", writableDirs: requested });
+    await recorder.until((event) => event.type === "turn.completed");
+    const refused = recorder.events.find((event) => event.type === "runtime.error") as { message: string } | undefined;
+    expect(refused?.message).toContain("beyond this turn's allowlist");
   });
 
   it("leaves an unrestricted Full turn at danger-full-access", async () => {

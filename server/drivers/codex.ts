@@ -11,8 +11,8 @@ import { reportUnsupportedCalls, rolloutMark, type RolloutMark } from "./codex-u
 // `turn/completed`, approvals arrive as server→client requests, resumeCursor is the codex thread id.
 import { createHash } from "node:crypto";
 import { mkdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
+import { join, sep } from "node:path";
+import { homedir, tmpdir } from "node:os";
 import { codexConfigMcp, codexConfigRunsServer, codexMcpDisableArgs, mountedMcpServerName } from "./codex-mcp-names.ts";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
@@ -197,22 +197,23 @@ function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">, writableRoot
   };
 }
 
-/** A requested root the resolved sandbox reports back, compared through links: codex may normalize paths. */
-function rootIsReported(root: string, reported: readonly unknown[]): boolean {
-  const matches = (candidate: unknown): string | null => typeof candidate === "string" && candidate.trim() ? candidate : null;
-  const target = tryRealRoot(root);
-  return reported.some((candidate) => {
-    const seen = matches(candidate);
-    return seen !== null && (seen === root || tryRealRoot(seen) === target);
-  });
-}
-
 function tryRealRoot(path: string): string {
   try {
     return realpathSync(path);
   } catch {
     return path;
   }
+}
+
+/** True when `seen` (a reported root, real-pathed) grants nothing beyond the requested allowlist: it may equal a
+ * requested root, sit inside one, or be the covering parent codex folds a nested request into (this bot's own
+ * task-folder root answering for a thread folder — R1 in the design notes). Paths are compared real-pathed so
+ * macOS /tmp → /private/tmp and link normalization never read as extra grants. */
+function rootExplainedByRequest(seen: string, requests: readonly string[], sep: string): boolean {
+  return requests.some((request) => {
+    const target = tryRealRoot(request);
+    return seen === target || seen.startsWith(target + sep) || target === seen || target.startsWith(seen + sep);
+  });
 }
 
 function withResolvedSandbox(params: CodexApprovalParams, session: unknown): CodexApprovalParams {
@@ -225,14 +226,23 @@ function withResolvedSandbox(params: CodexApprovalParams, session: unknown): Cod
   if (sandbox.type !== requested.type) {
     throw new Error("Codex did not apply the requested sandbox mode; cannot safely start the turn.");
   }
-  // The directory allowlist is verified by containment, when this Codex reports any roots back: an answer
-  // without them (an older build, or an empty list it derives from the bare sandbox) says nothing about them,
-  // and the OS sandbox still enforces what was requested.
-  const requestedRoots = Array.isArray(requested.writableRoots) ? requested.writableRoots : [];
-  const reportedRoots = Array.isArray(sandbox.writableRoots) && sandbox.writableRoots.length ? sandbox.writableRoots : null;
-  if (requestedRoots.length && reportedRoots &&
-      requestedRoots.some((root) => typeof root === "string" && !rootIsReported(root, reportedRoots))) {
-    throw new Error("Codex did not apply the requested writable directories; cannot safely start the turn.");
+  // The directory allowlist is verified by containment (design R1), never by exact echo: thread/start answers
+  // with only the implicit set (/tmp, $TMPDIR — probed on codex-cli 0.169.0), a nested request is folded into
+  // its covering parent, and paths come back symlink-normalized. A reported root is accepted when it is
+  // explained by the request or is one of workspace-write's implicit roots; anything beyond both means codex
+  // granted more than the allowlist asked, and the turn is refused. An empty echo says nothing and is tolerated
+  // (the OS sandbox still enforces the requested roots that rode in as config).
+  const requestedRoots = Array.isArray(requested.writableRoots) ? requested.writableRoots.filter((root): root is string => typeof root === "string" && root.trim() !== "") : [];
+  const reportedRoots = Array.isArray(sandbox.writableRoots) ? sandbox.writableRoots.filter((root): root is string => typeof root === "string" && root.trim() !== "") : [];
+  if (requestedRoots.length && reportedRoots.length) {
+    const implicit = new Set([tryRealRoot("/tmp"), tryRealRoot(tmpdir())]);
+    const beyond = reportedRoots.filter((reported) => {
+      const seen = tryRealRoot(reported);
+      return !implicit.has(seen) && !rootExplainedByRequest(seen, requestedRoots, sep);
+    });
+    if (beyond.length) {
+      throw new Error("Codex applied writable directories beyond this turn's allowlist; cannot safely start the turn.");
+    }
   }
   return { ...params, turn: { ...params.turn, sandboxPolicy: sandbox } };
 }
