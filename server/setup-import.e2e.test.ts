@@ -110,7 +110,17 @@ describe("bringing in another AI tool's setup through the desktop app's own serv
       expect(told.system).toContain(`- release-notes: Writes release notes from merged changes. Read ${JSON.stringify(join(copyOf("release-notes"), "SKILL.md"))}.`);
       expect(told.linked(".claude", "release-notes")).toBe(copyOf("release-notes"));
       expect(told.linked(".agents", "review-pr")).toBe(copyOf("review-pr"));
-      expect(told.argv).not.toContain("--add-dir");
+      if (bot === later) {
+        // A dialog-made bot is directory-confined now (bot-dir-access): the harness adds exactly its own folders,
+        // and the imported setup grants no directory of its own.
+        const added = told.argv.filter((arg: string, index: number) => told.argv[index - 1] === "--add-dir");
+        expect(added.length).toBeGreaterThan(0);
+        for (const dir of added) {
+          expect(dir.startsWith(join(fixture.info.dataDir, "workspaces", bot.id)) || dir.startsWith(join(fixture.info.dataDir, "task-workspaces", bot.id))).toBe(true);
+        }
+      } else {
+        expect(told.argv).not.toContain("--add-dir");
+      }
     }
     // The prompt preview in Bot Settings says the same.
     const preview = JSON.parse((await api("GET", `/api/bots/${later.id}/system-prompt`)).text) as { sections: Array<{ id: string; text: string }> };

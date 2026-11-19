@@ -7770,6 +7770,8 @@ describe("harness HTTP API", () => {
     try {
       const bot = (await api("POST", "/api/bots", {
         modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
+        // Unrestricted on purpose: a directory-confined bot's Full runs capped at acceptEdits (bot-dir-access), not here.
+        settings: { dirAccess: { mode: "open" } },
       })).body.bot;
       created.push(bot.id);
       expect((await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" })).status).toBe(200);
@@ -7805,7 +7807,8 @@ describe("harness HTTP API", () => {
       expect(custom.body.error).toMatch(/does not support/i);
 
       const born = await api("POST", "/api/bots", {
-        modelSelection: { instanceId: "claude", model: "claude-sonnet-5" }, settings: { approvalMode: "full" },
+        modelSelection: { instanceId: "claude", model: "claude-sonnet-5" },
+        settings: { approvalMode: "full", dirAccess: { mode: "open" } },
       });
       expect(born.status).toBe(201);
       created.push(born.body.bot.id);
@@ -7832,7 +7835,8 @@ describe("harness HTTP API", () => {
       return argv[argv.indexOf("--permission-mode") + 1];
     };
     type WireBot = { approvalMode?: string; tasks: Array<{ threadId: string; approvalMode?: string }> };
-    const bot = (await api("POST", "/api/bots", { modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } })).body.bot;
+    // Unrestricted on purpose: a directory-confined bot's Auto/Full run capped at acceptEdits (bot-dir-access), not here.
+    const bot = (await api("POST", "/api/bots", { modelSelection: { instanceId: "claude", model: "claude-sonnet-5" }, settings: { dirAccess: { mode: "open" } } })).body.bot;
     const opened: string[] = [];
     const levels = (saved: WireBot) => [bot.threadId, ...opened].map((threadId) =>
       saved.tasks.find((task) => task.threadId === threadId)?.approvalMode ?? saved.approvalMode);

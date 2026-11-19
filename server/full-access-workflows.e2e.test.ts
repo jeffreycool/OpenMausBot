@@ -100,11 +100,17 @@ it("applies requested Full Access workflows through MCP without duplicate approv
   try {
     const chief = (await cli("new-bot", "--name", "Clive", "--section", "Operations")).bot;
     await api("PATCH", `/api/bots/${chief.id}`, { chiefOfStaff: true });
+    // Unrestricted on purpose: a directory-confined bot's Full runs capped at acceptEdits (bot-dir-access), not here.
+    await api("PATCH", `/api/bots/${chief.id}`, { dirAccess: { mode: "open" } });
     const ask = (await api("POST", `/api/bots/${chief.id}/tasks`, { title: "Ask sibling" }, 201)).task;
     const peer = (await cli("new-bot", "--name", "Ada", "--section", "Operations")).bot;
     // Ada's own level is an explicit Ask, so the Chief's Full has something to raise.
     await api("PATCH", `/api/bots/${peer.id}`, { approvalMode: "ask" });
+    // Unrestricted on purpose: a directory-confined bot's raised Full runs capped at acceptEdits (bot-dir-access), not here.
+    await api("PATCH", `/api/bots/${peer.id}`, { dirAccess: { mode: "open" } });
     const inverse = (await cli("new-bot", "--name", "Thread Full", "--section", "Private")).bot;
+    // Unrestricted on purpose: a directory-confined bot's thread-Full turn runs capped at acceptEdits (bot-dir-access), not here.
+    await api("PATCH", `/api/bots/${inverse.id}`, { dirAccess: { mode: "open" } });
     const modelSelection = chief.modelSelection;
     await api("PATCH", "/api/config", { features: { skillAuthoring: true } });
 

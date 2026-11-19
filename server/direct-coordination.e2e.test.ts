@@ -515,6 +515,8 @@ it("uses recipient bot defaults for its new task, never the sender's or its sele
   const models = await f.cli("models");
   const options = models.instances.find((instance: any) => instance.instanceId === f.lead.modelSelection.instanceId).models.options;
   const selected = options.find((model: any) => model.id !== f.lead.modelSelection.model);
+  // Unrestricted on purpose: a directory-confined bot's Full runs capped at acceptEdits (bot-dir-access), not here.
+  await f.api(`/api/bots/${f.lead.id}`, { dirAccess: { mode: "open" } }, "PATCH");
   await f.api(`/api/bots/${f.lead.id}/tasks/${f.lead.activeTaskId}`, { modelSelection: { instanceId: f.lead.modelSelection.instanceId, model: selected.id }, approvalMode: "edits" }, "PATCH");
   await f.start(); expect((await f.wait()).status).toBe("settled");
   const node = f.nodes().find((entry: any) => entry.botId === f.lead.id);

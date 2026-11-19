@@ -51,7 +51,8 @@ afterAll(async () => {
 
 const newBot = async (name: string, level = "full") => {
   const bot = (await team.as(ada, "POST", "/api/bots", { name, visibility: "everyone" })).body.bot as { id: string; threadId: string };
-  expect((await team.as(ada, "PATCH", `/api/bots/${bot.id}`, { approvalMode: level, applyToAllThreads: true })).status).toBe(200);
+  // Unrestricted on purpose: a directory-confined bot's level runs capped at acceptEdits (bot-dir-access), not here.
+  expect((await team.as(ada, "PATCH", `/api/bots/${bot.id}`, { approvalMode: level, applyToAllThreads: true, dirAccess: { mode: "open" } })).status).toBe(200);
   return bot;
 };
 const newChief = async (name: string) => {

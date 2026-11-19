@@ -496,6 +496,8 @@ describe("independent bot tasks through the isolated control surface", () => {
   it("keeps A and B independent across selection, models, approvals, and stopping A", async () => {
     const created = await tool("create_bot", { name: "Independent fixture", instance_id: "claude", model: models[0] });
     const botId = created.bot.id;
+    // Unrestricted on purpose: a directory-confined bot's Auto runs capped at acceptEdits (bot-dir-access), not here.
+    expect((await api("PATCH", `/api/bots/${botId}`, { dirAccess: { mode: "open" } })).status).toBe(200);
     const taskA = created.bot.activeTaskId;
     expect((await api("PATCH", `/api/bots/${botId}/tasks/${taskA}`, { approvalMode: "ask" })).status).toBe(200);
     await control(["send", "--bot", botId, "--task", taskA, "--text", "ONLY_A"]);
@@ -721,6 +723,8 @@ describe("independent bot tasks through the isolated control surface", () => {
     const created = await tool("create_bot", { name: "Unattended fixture", instance_id: "claude", model: models[0] });
     const botId = created.bot.id;
     expect((await api("PATCH", `/api/bots/${botId}`, { approvalMode: "auto" })).status).toBe(200);
+    // Unrestricted on purpose: a directory-confined bot's Auto runs capped at acceptEdits (bot-dir-access), not here.
+    expect((await api("PATCH", `/api/bots/${botId}`, { dirAccess: { mode: "open" } })).status).toBe(200);
     const hook = await api("POST", "/api/webhooks", { name: "Fixture event", prompt: "UNATTENDED_ONLY", botId, runOn: "maus" });
     expect(hook.status).toBe(201);
     const delivered = await fetch(hook.body.credential.url, { method: "POST", body: "{}", headers: { "content-type": "application/json" } });

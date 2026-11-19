@@ -186,7 +186,8 @@ it("offers lending on a Cloud home with the maintainer flag still off", async ()
 });
 
 it("the person's Mac, lent by itself through the real connector, is usable by the owner's conversations and routines, never by what a guest left behind, a webhook or a call through a bot's API", async () => {
-  const newBot = async (name: string) => (await api("POST", "/api/bots", { token: owner, body: { name, modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } } })).body.bot;
+  // Unrestricted on purpose: a directory-confined bot's level runs capped at acceptEdits (bot-dir-access), not here.
+  const newBot = async (name: string) => (await api("POST", "/api/bots", { token: owner, body: { name, modelSelection: { instanceId: "claude", model: "claude-sonnet-5" }, settings: { dirAccess: { mode: "open" } } } })).body.bot;
   const routineFor = async (botName: string, prompt = "Read plan.md from my Mac.") => {
     const botId = (await newBot(botName)).id as string;
     const created = await api("POST", "/api/routines", { token: owner, body: {

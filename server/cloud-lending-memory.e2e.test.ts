@@ -777,6 +777,8 @@ it("a conversation a guest left behind works in its own folder: what is written 
 it("a conversation a guest left behind runs in Ask whatever the bot's own level; the owner's own keeps it", async () => {
   const bot = await newBot("Levels", "held");
   expect((await api("PATCH", `/api/bots/${bot.id}`, { token: owner, body: { approvalMode: "auto" } })).status).toBe(200);
+  // Unrestricted on purpose: a directory-confined bot's Auto runs capped at acceptEdits (bot-dir-access), not here.
+  expect((await api("PATCH", `/api/bots/${bot.id}`, { token: owner, body: { dirAccess: { mode: "open" } } })).status).toBe(200);
   const mode = () => { const argv = JSON.parse(readFileSync(dumpOf("held"), "utf8")).argv as string[]; return argv[argv.indexOf("--permission-mode") + 1]; };
   const newRoom = async (name: string) => (await api("POST", "/api/groups", { token: owner, body: { memberIds: [bot.id], name, setup: { bulletin: "", defaultResponder: { kind: "everyone" } } } })).body.group as { id: string; threadId: string };
   const guests = await newThread(bot, owner, "Guest's");

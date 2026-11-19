@@ -121,7 +121,8 @@ const claudeDump = () => join(home, "claude.json");
 const codexDump = () => join(home, "codex.json");
 const authors = () => JSON.parse(readFileSync(join(dataDir, "lending-routines.json"), "utf8")) as { routines: Record<string, string>; writers: Record<string, string> };
 const newBot = async (name: string, instanceId: string) =>
-  (await api("POST", "/api/bots", { token: owner, body: { name, modelSelection: { instanceId, model: instanceId === "codex" ? "gpt-5.5" : "claude-sonnet-5" } } })).body.bot as { id: string; threadId: string };
+  // Unrestricted on purpose: a directory-confined bot's level runs capped at acceptEdits (bot-dir-access), not here.
+  (await api("POST", "/api/bots", { token: owner, body: { name, modelSelection: { instanceId, model: instanceId === "codex" ? "gpt-5.5" : "claude-sonnet-5" }, settings: { dirAccess: { mode: "open" } } } })).body.bot as { id: string; threadId: string };
 const idle = async (botId: string) => expect.poll(async () => (await api("GET", "/api/bots", { token: owner })).body.bots.find((bot: any) => bot.id === botId)?.busy,
   { timeout: hostTimeout(15_000) }).toBe(false);
 const release = async (...botIds: string[]) => {

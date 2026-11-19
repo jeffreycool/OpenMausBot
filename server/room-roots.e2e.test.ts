@@ -84,6 +84,8 @@ async function scenario(test: (f: any) => Promise<void>, options: { fake?: Recor
     const cli = (...args: string[]) => runControlOmb([...args, "--url", url]) as Promise<any>;
     const bot = async (name: string, section: string) => (await cli("new-bot", "--name", name, "--section", section)).bot;
     const clive = await bot("Clive", "Leadership");
+    // Unrestricted on purpose: a directory-confined bot's Full runs capped at acceptEdits (bot-dir-access), not here.
+    await api("PATCH", `/api/bots/${clive.id}`, { dirAccess: { mode: "open" } });
     const planPath = join(dataDir, "room-plan.json");
     const plan: Record<string, { script: unknown[] }> = { [clive.id]: { script: [] } };
     const script = (botId: string, ...entries: unknown[]) => {
@@ -178,6 +180,8 @@ it("R1 runs each responder of a person's room message as a root in the room thre
 
 it("R2 a member's coordinate_bots reuses its turn's root, and a Chief's Full reaches the teammate's row and turn", () => scenario(async (f) => {
   const mira = await f.bot("Mira", "Engineering");
+  // Unrestricted on purpose: a directory-confined bot's raised Full runs capped at acceptEdits (bot-dir-access), not here.
+  expect((await f.api("PATCH", `/api/bots/${mira.id}`, { dirAccess: { mode: "open" } })).status).toBe(200);
   expect((await f.api("PATCH", `/api/bots/${f.clive.id}`, { chiefOfStaff: true, managedSections: ["Engineering"], acknowledgePeerScope: true })).status).toBe(200);
   // Full on the Chief is the operator's grant, seeded on the stored record while the server is down.
   await f.restart("SIGTERM", {}, () => {
