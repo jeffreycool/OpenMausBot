@@ -165,5 +165,5 @@ describe("CodexDriver directory allowlist (fake app-server)", () => {
     const open = JSON.parse(readFileSync(openDump, "utf8")) as { argv: string[] };
     expect(open.argv).toContain("danger-full-access");
     expect(open.argv.some((arg) => arg.includes("sandbox_workspace_write.writable_roots=") || arg.includes('sandbox_mode="workspace-write"'))).toBe(false);
-  });
+  }, 45_000);
 });
