@@ -16,6 +16,7 @@ import { useDesktopCapabilities } from "../DesktopCapabilities";
 import { CloudBackendPicker } from "../CloudBackendPicker";
 import { placeManagedBy, worksOnChoices, WorksOnGrid, worksOnSelected, type WorksOnMode } from "../WorksOnGrid";
 import { Switch } from "../SettingsPrimitives";
+import { DirAccessCard } from "./DirAccessCard";
 import { PhoneAppsCard } from "./PhoneAppsCard";
 import { ProposalStatus } from "./ProposalStatus";
 import { ToolGroupsCard } from "./ToolGroupsCard";
@@ -752,6 +753,8 @@ export function AccessSection({
       </div>}
 
       {shows("folder") && <WorkingFolder bot={bot} />}
+
+      {shows("folder") && <DirAccessCard bot={bot} />}
 
       {shows("apps") && <div className="rounded-xl bg-card p-4">
         <div className="flex items-center justify-between gap-4">

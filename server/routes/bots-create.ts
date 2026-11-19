@@ -1,5 +1,6 @@
 import type { BotCreateResponse, WireBot } from "../../shared/wire.ts";
 import { freshLook } from "../bot-look.ts";
+import { validateBotDirAccessInput } from "../bot-dir-access.ts";
 import { validateBotCwd } from "../bot-cwd.ts";
 import { parseBotProfilePatch } from "../bot-profile.ts";
 import { parseVisibility } from "../bot-visibility.ts";
@@ -148,6 +149,8 @@ export function createBotCreateRoutes(deps: BotCreateRouteDeps): RouteHandler {
       }
       const checkedCwd = validateBotCwd(settings.cwd ?? null);
       if (!checkedCwd.ok) return json(res, 400, { error: checkedCwd.error });
+      const checkedDirAccess = validateBotDirAccessInput(settings.dirAccess ?? null);
+      if (!checkedDirAccess.ok) return json(res, 400, { error: checkedDirAccess.error });
       if (body.requireAvailableModel !== undefined && typeof body.requireAvailableModel !== "boolean") {
         return json(res, 400, { error: "requireAvailableModel must be true or false" });
       }
@@ -212,6 +215,7 @@ export function createBotCreateRoutes(deps: BotCreateRouteDeps): RouteHandler {
           avatarUrl: ordinary.avatarUrl || undefined,
           // Auto with Approve for me stays Auto: This computer with it needs the warning only the bot's Settings shows.
           computer: ordinary.computer ?? (ordinary.computer === undefined && ordinary.approvalMode !== "auto" ? deps.newBotComputer?.(selection) : undefined), cwd: checkedCwd.cwd ?? undefined,
+          dirAccess: checkedDirAccess.dirAccess,
           mcpServers: ordinary.mcpServers ?? undefined,
           browserProfile: ordinary.browserProfile || undefined,
           voiceNoteEveryReply: ordinary.voiceNoteEveryReply ?? undefined,

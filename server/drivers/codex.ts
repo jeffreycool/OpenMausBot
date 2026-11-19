@@ -10,7 +10,7 @@ import { reportUnsupportedCalls, rolloutMark, type RolloutMark } from "./codex-u
 // The `codex` CLI headless over its app-server JSON-RPC (NDJSON on stdio): completion is
 // `turn/completed`, approvals arrive as server→client requests, resumeCursor is the codex thread id.
 import { createHash } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { codexConfigMcp, codexConfigRunsServer, codexMcpDisableArgs, mountedMcpServerName } from "./codex-mcp-names.ts";
@@ -158,9 +158,12 @@ function extendShellExclusions(policy: Record<string, unknown>, patterns: readon
 }
 
 /** Codex persists these on its native thread, so they are explicit on start, resume and every turn.
- * Codex has no narrower "edits only" sandbox, so a stray Edits value asks. */
-function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">): CodexApprovalParams {
-  if (mode === "full") {
+ * Codex has no narrower "edits only" sandbox, so a stray Edits value asks.
+ * `writableRoots` (a directory-write allowlist) caps the sandbox at workspace-write even for Full:
+ * the OS sandbox then enforces the allowlist while approvals stay self-granted inside it. */
+function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">, writableRoots?: readonly string[]): CodexApprovalParams {
+  const roots = writableRoots?.length ? [...writableRoots] : undefined;
+  if (mode === "full" && !roots) {
     return {
       thread: {
         approvalPolicy: "never",
@@ -174,6 +177,12 @@ function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">): CodexApprov
       },
     };
   }
+  if (mode === "full" && roots) {
+    return {
+      thread: { approvalPolicy: "never", approvalsReviewer: "user", sandbox: "workspace-write" },
+      turn: { approvalPolicy: "never", approvalsReviewer: "user", sandboxPolicy: { type: "workspaceWrite", writableRoots: roots } },
+    };
+  }
   return {
     thread: {
       approvalPolicy: "on-request",
@@ -183,9 +192,27 @@ function namedApprovalParams(mode: Exclude<ApprovalMode, "custom">): CodexApprov
     turn: {
       approvalPolicy: "on-request",
       approvalsReviewer: mode === "auto" ? "auto_review" : "user",
-      sandboxPolicy: { type: "workspaceWrite" },
+      sandboxPolicy: { type: "workspaceWrite", ...(roots ? { writableRoots: roots } : {}) },
     },
   };
+}
+
+/** A requested root the resolved sandbox reports back, compared through links: codex may normalize paths. */
+function rootIsReported(root: string, reported: readonly unknown[]): boolean {
+  const matches = (candidate: unknown): string | null => typeof candidate === "string" && candidate.trim() ? candidate : null;
+  const target = tryRealRoot(root);
+  return reported.some((candidate) => {
+    const seen = matches(candidate);
+    return seen !== null && (seen === root || tryRealRoot(seen) === target);
+  });
+}
+
+function tryRealRoot(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return path;
+  }
 }
 
 function withResolvedSandbox(params: CodexApprovalParams, session: unknown): CodexApprovalParams {
@@ -198,17 +225,29 @@ function withResolvedSandbox(params: CodexApprovalParams, session: unknown): Cod
   if (sandbox.type !== requested.type) {
     throw new Error("Codex did not apply the requested sandbox mode; cannot safely start the turn.");
   }
+  // The directory allowlist is verified by containment, when this Codex reports any roots back: an answer
+  // without them (an older build, or an empty list it derives from the bare sandbox) says nothing about them,
+  // and the OS sandbox still enforces what was requested.
+  const requestedRoots = Array.isArray(requested.writableRoots) ? requested.writableRoots : [];
+  const reportedRoots = Array.isArray(sandbox.writableRoots) && sandbox.writableRoots.length ? sandbox.writableRoots : null;
+  if (requestedRoots.length && reportedRoots &&
+      requestedRoots.some((root) => typeof root === "string" && !rootIsReported(root, reportedRoots))) {
+    throw new Error("Codex did not apply the requested writable directories; cannot safely start the turn.");
+  }
   return { ...params, turn: { ...params.turn, sandboxPolicy: sandbox } };
 }
 
-function legacyCustomApprovalParams(config: Record<string, unknown>): CodexApprovalParams {
+function legacyCustomApprovalParams(config: Record<string, unknown>, writableRoots?: readonly string[]): CodexApprovalParams {
+  const roots = writableRoots?.length ? [...writableRoots] : undefined;
   const approvalPolicy = effectiveApprovalPolicy(config.approval_policy);
   const approvalsReviewer = effectiveApprovalsReviewer(config.approvals_reviewer);
-  const sandbox = config.sandbox_mode === "workspace-write" ||
-    config.sandbox_mode === "danger-full-access" ||
-    config.sandbox_mode === "read-only"
-    ? config.sandbox_mode
-    : "read-only";
+  const sandbox = roots && config.sandbox_mode === "danger-full-access"
+    ? "workspace-write" // a directory allowlist caps even a config's danger-full-access
+    : config.sandbox_mode === "workspace-write" ||
+      config.sandbox_mode === "danger-full-access" ||
+      config.sandbox_mode === "read-only"
+      ? config.sandbox_mode
+      : "read-only";
   let sandboxPolicy: Record<string, unknown>;
   if (sandbox === "danger-full-access") sandboxPolicy = { type: "dangerFullAccess" };
   else if (sandbox === "read-only") sandboxPolicy = { type: "readOnly" };
@@ -218,7 +257,9 @@ function legacyCustomApprovalParams(config: Record<string, unknown>): CodexAppro
       : {};
     sandboxPolicy = {
       type: "workspaceWrite",
-      ...(Array.isArray(workspace.writable_roots) ? { writableRoots: workspace.writable_roots } : {}),
+      ...(roots || Array.isArray(workspace.writable_roots)
+        ? { writableRoots: [...new Set([...(roots ?? []), ...(Array.isArray(workspace.writable_roots) ? workspace.writable_roots.filter((root): root is string => typeof root === "string") : [])])] }
+        : {}),
       ...(typeof workspace.network_access === "boolean" ? { networkAccess: workspace.network_access } : {}),
       ...(typeof workspace.exclude_slash_tmp === "boolean" ? { excludeSlashTmp: workspace.exclude_slash_tmp } : {}),
       ...(typeof workspace.exclude_tmpdir_env_var === "boolean"
@@ -239,17 +280,18 @@ function configuredPermissionProfile(config: Record<string, unknown>): string | 
   return profile;
 }
 
-function customApprovalParams(raw: unknown): CodexApprovalParams {
+function customApprovalParams(raw: unknown, writableRoots?: readonly string[]): CodexApprovalParams {
   const config = raw && typeof raw === "object" && !Array.isArray(raw)
     ? raw as Record<string, unknown>
     : {};
-  const fallback = legacyCustomApprovalParams(config);
+  const fallback = legacyCustomApprovalParams(config, writableRoots);
   const permissions = configuredPermissionProfile(config);
   const approvalPolicy = effectiveApprovalPolicy(config.approval_policy);
   const approvalsReviewer = effectiveApprovalsReviewer(config.approvals_reviewer);
   // Codex 0.151 profiles define the sandbox but not the approval policy: reassert both approval
   // fields so a resumed Full thread cannot keep `never`.
-  return permissions
+  // A restricted turn skips the named profile: its sandbox lives on Codex's side and could not carry the allowlist.
+  return permissions && !writableRoots?.length
     ? {
         thread: { permissions, approvalPolicy, approvalsReviewer },
         turn: { permissions, approvalPolicy, approvalsReviewer },
@@ -1372,9 +1414,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         let approvalParams: CodexApprovalParams;
         if (approvalMode === "custom") {
           // Omitting these on a resumed thread would keep the previous named mode.
-          approvalParams = customApprovalParams(effectiveConfig);
+          approvalParams = customApprovalParams(effectiveConfig, turn.writableDirs);
         } else {
-          approvalParams = namedApprovalParams(approvalMode);
+          approvalParams = namedApprovalParams(approvalMode, turn.writableDirs);
         }
         // Codex's `never` means "do not ask to escalate", not "grant every requested permission":
         // only Full may synthesize approvals.

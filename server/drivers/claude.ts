@@ -4,7 +4,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
-import { join, dirname, isAbsolute, normalize } from "node:path";
+import { join, dirname, isAbsolute, normalize, relative, resolve } from "node:path";
 
 import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
 import { openStartupModelCatalog, unconfirmedModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
@@ -219,6 +219,36 @@ export const GUEST_CLAUDE_PERMISSIONS = {
   blockReadsOutsideWorkingDirectories: true,
   deny: ["Bash", "PowerShell", "WebFetch", "Read(//proc/**)"],
 } as const;
+
+const DIR_ACCESS_WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+
+/** A bot's own settings for a restricted turn, minus everything that could widen its directory allowlist: the deep
+ * merge unions arrays, so additionalDirectories outside the allowlist and file-write allow rules are dropped first.
+ * Everything else (hooks, env, non-path grants like WebFetch domains) carries through unchanged. */
+export function confineBotSettings(settings: Record<string, unknown>, writableDirs?: readonly string[]): Record<string, unknown> {
+  if (!writableDirs?.length) return settings;
+  const permissions = settings.permissions;
+  if (!permissions || typeof permissions !== "object" || Array.isArray(permissions)) return settings;
+  const source = permissions as Record<string, unknown>;
+  const inside = (dir: unknown): boolean => typeof dir === "string" &&
+    writableDirs.some((root) => isInDir(root, dir));
+  const dropWriteGrant = (rule: unknown): boolean => typeof rule === "string" &&
+    DIR_ACCESS_WRITE_TOOLS.has(rule.split("(", 1)[0]!.trim());
+  const next: Record<string, unknown> = { ...source };
+  for (const key of ["allow", "ask"] as const) {
+    const rules = source[key];
+    if (Array.isArray(rules)) next[key] = rules.filter((rule) => !dropWriteGrant(rule));
+  }
+  const extra = source.additionalDirectories;
+  if (Array.isArray(extra)) next.additionalDirectories = extra.filter(inside);
+  return { ...settings, permissions: next };
+}
+
+/** Path containment on resolved absolute paths; relative entries resolve against the process cwd like the CLI's. */
+function isInDir(root: string, candidate: string): boolean {
+  const inside = relative(root, resolve(candidate));
+  return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
+}
 
 export type ClaudeCliVersion = readonly [number, number, number];
 
@@ -984,11 +1014,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             await killCliTree(stopped.child)) await stopped.closed;
         if (active.has(threadId)) throw new Error("a turn is already running on this thread");
       }
-      const permissionMode = turn.approvalMode === undefined
+      let permissionMode = turn.approvalMode === undefined
         ? config.permissionMode
         : turn.approvalMode === "full" ? "bypassPermissions"
           : turn.approvalMode === "auto" ? "auto"
             : turn.approvalMode === "edits" ? "acceptEdits" : "default";
+      // A directory-write allowlist caps the permission mode at acceptEdits: bypass and auto would skip the
+      // permission checks the allowlist relies on (edits in cwd + --add-dir pass; anything else asks).
+      if (turn.writableDirs?.length && (permissionMode === "bypassPermissions" || permissionMode === "auto")) {
+        permissionMode = "acceptEdits";
+      }
       const controlsHost = turn.integrations?.localComputer?.scope === "local-computer";
       if (controlsHost && permissionMode === "bypassPermissions" && turn.approvalMode !== "full") {
         throw new Error("local computer control requires the interactive approval broker");
@@ -1040,6 +1075,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         if (!turn.mcpFromUserConfig && claudeCliSupports(turnCliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
         if (projectSettingsOnly) args.push("--setting-sources", "project");
         if (turn.userSkillsDir) args.push("--add-dir", turn.userSkillsDir);
+      }
+      // A directory-write allowlist is exactly the CLI's additional working directories: edits inside them
+      // auto-approve in acceptEdits, writes outside ask through the broker (headless runs deny).
+      if (!turn.guestConfined && turn.writableDirs?.length) {
+        for (const dir of turn.writableDirs) args.push("--add-dir", dir);
       }
       const compactWindow = autoCompactWindow(turnEnvironment);
       const passedAutocompact = Boolean(compactWindow) && ownCli && cliHasAutocompact === true; if (compactWindow && passedAutocompact) args.push("--autocompact", compactWindow);
@@ -1162,11 +1202,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (isolated) own.claudeMdExcludes = [join(homedir(), ".claude", "CLAUDE.md")];
       if (hooks) own.hooks = claudeHookSettings(HOOK_HELPER_PATH);
       if (turn.guestConfined) own.permissions = GUEST_CLAUDE_PERMISSIONS;
+      else if (turn.writableDirs?.length) own.permissions = { additionalDirectories: [...turn.writableDirs] };
       // Approvals and browser credentials expire at the turn boundary; native background workers and cron jobs must not outlive it.
       env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = env.CLAUDE_CODE_DISABLE_CRON = "1";
       // Never for a guest: --restricted leaves project settings out, and a hook is a command. The MCP output limit comes after, so one the bot set there is kept.
       const botSettings = turn.guestConfined ? {} : botSettingsFor(turn.botSettingsFile, cwd, env); limitUngatedOutput(env, mcpServers, botOwned, turn.integrations?.customResultBudgets, (botSettings.env as Record<string, unknown> | undefined)?.MAX_MCP_OUTPUT_TOKENS ?? (turn.guestConfined ? undefined : folderSettingsEnv(cwd, "MAX_MCP_OUTPUT_TOKENS", projectSettingsOnly)));
-      const settings = withBotSettings(botSettings, own);
+      // The bot's own settings cannot widen the directory allowlist: additionalDirectories outside it and
+      // file-write allows are dropped before the deep merge's array union could grant them.
+      const confinedSettings = turn.guestConfined ? botSettings : confineBotSettings(botSettings, turn.writableDirs);
+      const settings = withBotSettings(confinedSettings, own);
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;
       if (authSettingsPath) args.push("--settings", authSettingsPath);

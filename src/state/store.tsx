@@ -303,6 +303,7 @@ export interface Bot extends DefaultBotFields, Pick<WireBot, "mascotFaceColor" |
   autoStartVps?: boolean;
   vpsAlias?: string;
   cwd?: string;
+  dirAccess?: import("../../shared/wire").BotDirAccess;
   autoApprove?: boolean;
   approvalMode?: ApprovalMode;
   alwaysAllow?: string[];

@@ -10,6 +10,7 @@ import { parseToolsOff, TOOL_GROUPS } from "../../shared/tool-groups.ts";
 import { isMausColor, MAUS_COLOR_NAMES, type BotUpdateResponse, type WireBot, type WireGroup } from "../../shared/wire.ts";
 import { dropRemovedGrants, MAX_ALWAYS_ALLOW } from "../always-allow.ts";
 import { checkBrowserProfileChange, settleBrowserChange } from "../bot-browser-profile.ts";
+import { dirAccessWidens, validateBotDirAccessInput, type BotDirAccess } from "../bot-dir-access.ts";
 import { validateBotCwd } from "../bot-cwd.ts";
 import { parseBotProfilePatch } from "../bot-profile.ts";
 import { accessFromVisibility } from "../../shared/bot-access.ts";
@@ -469,6 +470,12 @@ export function createBotPatchRoutes(deps: BotPatchRouteDeps): RouteHandler {
         if (!checked.ok) return json(res, 400, { error: checked.error });
         patch.cwd = checked.cwd ?? undefined;
       }
+      // Follows cwd: an admin-only channel decides where a bot may write, never a member's profile patch.
+      if (body.dirAccess !== undefined) {
+        const checked = validateBotDirAccessInput(body.dirAccess);
+        if (!checked.ok) return json(res, 400, { error: checked.error });
+        patch.dirAccess = checked.dirAccess;
+      }
       if (body.hidden === true && existingBot?.chiefOfStaff && body.chiefOfStaff !== false) {
         return json(res, 400, { error: "choose another Chief of Staff before hiding this bot" });
       }
@@ -621,6 +628,8 @@ export function createBotPatchRoutes(deps: BotPatchRouteDeps): RouteHandler {
         loosened.push("mcpServers");
       }
       if (Object.hasOwn(body, "toolScope") && toolScopeWidens(existingBot?.toolScope, patch.toolScope)) loosened.push("toolScope");
+      // Writable set grows (toward open, or a longer allowlist): same idle-bots gate as the other grants.
+      if (body.dirAccess !== undefined && dirAccessWidens(existingBot?.dirAccess, patch.dirAccess as BotDirAccess | undefined)) loosened.push("dirAccess");
       const browserOrigin = typeof req.headers.origin === "string" && req.headers.origin.trim() !== "";
       if (loosened.length && auth.kind === "loopback" && !DESKTOP_MANAGED && !browserOrigin) {
         if (store.bots.some((candidate) => candidate.busy)) {

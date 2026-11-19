@@ -258,6 +258,14 @@ export const CONNECTOR_TOOL_NAME_PATTERN = /^[A-Z][A-Z0-9_]{0,127}$/;
 /** Fails closed: only an absent switch or a strict true allows the helper model; a hand-edited "false" or 0 reads as never. */
 export const helperModelAllowed = (bot: { helperModel?: unknown }): boolean => bot.helperModel === undefined || bot.helperModel === true;
 
+/** Directory write policy. Absent = unrestricted (existing bots keep their behavior). */
+export interface BotDirAccess {
+  /** workspace = only this bot's OpenMausBot folders; custom = those plus extraDirs; open = anywhere. */
+  mode: "workspace" | "custom" | "open";
+  /** Extra writable absolute directories for mode "custom" (resolved and ~-expanded when saved; at most 20). */
+  extraDirs?: string[];
+}
+
 /** A bot as a client may see it. avatarUrl is always present (null when the
  * bot has none). */
 export interface WireBot extends DefaultBotFields, BotAccessFields {
@@ -313,6 +321,8 @@ export interface WireBot extends DefaultBotFields, BotAccessFields {
   vpsAlias?: string;
   /** where its tasks run their tools; absent = each task's own folder. Its .claude/settings.json (else the bot folder's) applies in all. */
   cwd?: string;
+  /** Where this bot may write files. Absent = unrestricted. Reading is never restricted. */
+  dirAccess?: BotDirAccess;
   /** Auto mode: the bot approves its own tool permissions. */
   autoApprove?: boolean;
   /** Canonical approval level. Missing resolves through autoApprove. */

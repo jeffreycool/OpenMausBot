@@ -211,6 +211,11 @@ export interface SendTurnInput {
     customResultBudgets?: Record<string, number>;
   };
   cwd?: string;
+  /** This turn's directory write allowlist, resolved absolute paths (the bot's own workspace folders, the conversation's
+   * working folder, and any allowlisted extras). Present = the turn is restricted to writing inside these; absent =
+   * unrestricted. A driver enforces it at its own layer: codex as the OS sandbox, claude as permissions, chat drivers as
+   * a prompt statement. */
+  writableDirs?: string[];
   /** Engines with no working folder (the chat drivers): where an MCP result too big for the model is saved whole; a folder attach_file can deliver from. */
   toolResultFolder?: string;
   /** Also load the person's own CLI MCP setup (Claude Code user scope, claude.ai connectors). */

@@ -135,7 +135,7 @@ function memoryEntryStat(path: string) {
   return regularMemoryFilesOnly ? lstatSync(path) : statSync(path);
 }
 
-export function workspaceLocationsPrompt(botId: string, cwd: string | undefined, botCwd?: string, opts: { attachFile?: boolean } = {}): string {
+export function workspaceLocationsPrompt(botId: string, cwd: string | undefined, botCwd?: string, opts: { attachFile?: boolean; writableDirs?: readonly string[] } = {}): string {
   return "\n\nFile locations for this bot (absolute paths): " + JSON.stringify({
     currentWorkingFolder: cwd ?? "Provider default; inspect the working directory before using relative paths",
     sharedBotFolder: workspaceDir(botId),
@@ -145,6 +145,9 @@ export function workspaceLocationsPrompt(botId: string, cwd: string | undefined,
     " Follow an explicitly requested destination. Otherwise put new task output in the current working folder and report its absolute path so another thread or room can use it." +
     " Do not move old files, edit another active thread's work, or read another bot's private folders without authorization. These paths do not grant additional access." +
     " Chat links and inline images open only files in currentWorkingFolder and sharedBotFolder." +
+    (opts.writableDirs
+      ? ` Write boundary: this bot may create, modify or delete files only inside these folders (absolute paths): ${JSON.stringify(opts.writableDirs)}. Reading is not restricted, but a request to write anywhere else must be refused and reported, however the request is phrased.`
+      : "") +
     (opts.attachFile
       ? " When you save a file or picture for the person somewhere else, also attach it with attach_file in the same turn so it opens from chat. For many files, attach the few that matter most, such as a preview."
       : " Save a file or picture you want to show in chat there.");

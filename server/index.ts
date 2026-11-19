@@ -353,6 +353,7 @@ import {
   workspaceDir,
   botSettingsFile,
 } from "./workspace.ts";
+import { resolveWritableDirs } from "./bot-dir-access.ts";
 import { memoryDate, writeMemoryFile, writeMemoryTopic } from "./workspace.ts";
 import {
   beginMemoryTurn,
@@ -8264,6 +8265,8 @@ async function beginTurn(
       }
       // One bot snapshot for the browser bearer, setupModeActive and the prompt's soul, so a soul saved mid-dispatch cannot split them.
       const liveBot = store.bot(bot.id);
+      // The turn's write allowlist (null = unrestricted): own workspace folders + this conversation's folder + extras.
+      const writableDirs = resolveWritableDirs(liveBot ?? bot, cwd, DATA_DIR);
       const setupMode =
         agentsMounted &&
         setupModeActive({
@@ -8335,7 +8338,7 @@ async function beginTurn(
           cwd: liveBot?.cwd ?? bot.cwd,
           connectedApps: setupConnectedApps(bot, instance.adapter.capabilities.composioMcp === true, Boolean(integrations.composio)),
         }) },
-        { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE }) + teamFilesHost.promptLine(bot.id) : "" },
+        { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, writableDirs: writableDirs ?? undefined }) + teamFilesHost.promptLine(bot.id) : "" },
         { id: "shell", label: "Long-running commands", text: worksInWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
         { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
         { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
@@ -8426,6 +8429,7 @@ async function beginTurn(
         ...(integrations.browser && browserIsThePlace(turnSurfacePlan(bot, undefined, threadId, true)) ? { preloadBrowserTools: true } : {}),
         ...skillsHost.turnSettings(bot, threadId, instance, managedPolicy.restrictsMcp()),
         cwd, ...(worksInWorkspace || guestConfined || cloudGuestOpened(threadId) ? {} : { toolResultFolder: messageFileRootsForThread(bot.id, threadId).find((root) => root !== ATTACHMENTS_DIR) }),
+        ...(writableDirs ? { writableDirs } : {}),
         botSettingsFile: botSettingsFile(bot),
       }, (input) => quickFallback.sendTurn(instance, input, route.quickModel ? { model, own: bot.modelSelection, onFallback: () => store.patchMessage(threadId, userMessage.id, { quickModel: undefined }) } : undefined))), () => companyShutdown || !directTurnClaimExists(bot.id, dispatchClaimId, threadId), async () => {
         await (runningTurnEngines.get(threadId) ?? instance).adapter.interruptTurn(threadId).catch(() => {});
@@ -10087,6 +10091,8 @@ async function runClaimedGroupMemberTurn(
     ? ensureTaskWorkspaceWithSkills(bot.id, threadId, skillsHost.turnImports(bot, threadId, instance))
     : groupTurnCwd(workspace, () => store.pinGroupCwd(readyGroup.id, threadId));
   assertRoomFolder(cwd); if (workspace && bot.memoryEnabled !== false) beginMemoryTurn(teamHost.layer(bot.id, threadId), threadId); if (workspace) { botBox.lend(bot.id, threadId, teamHost.layerDirs(bot.id, threadId)); teamFilesHost.beginTurn(bot.id, threadId); }
+  // The turn's write allowlist (null = unrestricted): own workspace folders + the room's folder + extras.
+  const roomWritableDirs = resolveWritableDirs(readyBot ?? bot, cwd, DATA_DIR);
   {
     const drift = checkSoulDrift(bot.id, bot.soul ?? "", bot.soulHash ?? "");
     if (drift.drift !== Boolean(bot.soulDrift)) store.patchBot(bot.id, { soulDrift: drift.drift });
@@ -10114,7 +10120,7 @@ async function runClaimedGroupMemberTurn(
   applyAgentsBridge(threadId, integrations, cfg, bot, turnEngine(instance, providerConfigs(), registry.lastSnapshot(instance.instanceId), cwd));
   const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(teamHost.profileFor(threadId, cfg.profile)) }, { id: "people", label: "People", text: teamMessages.prompt(bot.id, threadId, Boolean(integrations.agents)) },
-    { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE }) + teamFilesHost.promptLine(bot.id) : "" },
+    { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, writableDirs: roomWritableDirs ?? undefined }) + teamFilesHost.promptLine(bot.id) : "" },
     { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {}), mcpServersHost.off(bot)) + teamConnections.prompt(threadId, internalGeneration, integrations) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
@@ -10281,6 +10287,7 @@ async function runClaimedGroupMemberTurn(
         systemStable: roomSystem.stable,
         systemVolatile: roomSystem.volatile,
         cwd, ...(worksInWorkspace || roomGuestConfined || cloudGuestOpened(threadId) ? {} : { toolResultFolder: messageFileRootsForThread(readyBot.id, threadId).find((root) => root !== ATTACHMENTS_DIR) }),
+        ...(roomWritableDirs ? { writableDirs: roomWritableDirs } : {}),
         integrations,
         ...(integrations.browser && browserIsThePlace(roomPlan) ? { preloadBrowserTools: true } : {}),
         ...skillsHost.turnSettings(readyBot, threadId, instance, managedPolicy.restrictsMcp()),

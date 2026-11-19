@@ -1,6 +1,7 @@
 import { userErrorThrown } from "./user-errors.ts";
 import { z } from "zod";
 import { profilePatchSchema, fitsOnOneLine } from "./bot-profile.ts";
+import { botDirAccessSchema } from "./bot-dir-access.ts";
 import { EFFORT_LEVELS, MAUS_COLOR_NAMES } from "../shared/wire.ts";
 import { isModelVariant } from "./contracts.ts";
 import { normalizeCronSchedule } from "../shared/routine-schedule.ts";
@@ -40,6 +41,7 @@ export const botDefaultsProfileSchema = z.preprocess(withoutRetiredFields, profi
   cloudBackend: z.enum(["box", "vps"]).optional(),
   autoStartVps: z.boolean().optional(),
   cwd: z.string().max(4096).nullable().optional(),
+  dirAccess: botDirAccessSchema.optional(),
   approvalMode: z.enum(["ask", "auto", "full", "custom"]).optional(),
   alwaysAllow: strings(200, 500).optional(),
   chiefOfStaff: z.boolean().optional(),
@@ -137,6 +139,9 @@ export function resolveBotCreationDefaults(saved: NewBotDefaults | undefined, bo
   if (!checked.success) throw Object.assign(settingsError(checked.error), { status: 400 });
   const explicit = checked.data;
   const profile = { ...template.profile, ...explicit };
+  // A new bot starts confined to its own folders unless its creator or the saved defaults said otherwise
+  // (existing bots, whose record keeps no dirAccess, stay unrestricted).
+  if (profile.dirAccess === undefined) profile.dirAccess = { mode: "workspace" };
   for (const key of ["name", "title", "description", "modelSelection", "section"] as const) {
     if (Object.hasOwn(body, key)) Object.assign(profile, { [key]: key === "section" && body[key] === null ? "" : body[key] });
   }
