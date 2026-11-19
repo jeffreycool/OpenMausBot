@@ -3246,6 +3246,7 @@
   "onboarding.chief.choose": "选择现有机器人",
   "onboarding.chief.chooseTitle": "选择你的参谋长",
   "onboarding.chief.confirm": "确认",
+  "onboarding.chief.later": "以后再说",
   "onboarding.continue": "继续",
   "onboarding.engines.error": "无法检查你的 AI 连接。请再试一次。",
   "onboarding.tour.error": "无法保存你的进度。请再试一次，或跳过导览。",

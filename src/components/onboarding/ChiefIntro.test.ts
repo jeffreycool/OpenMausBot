@@ -7,7 +7,7 @@ import { introStaged, stageIntro, useWelcomingBot } from "@/lib/default-bot";
 import { setLocale } from "@/lib/i18n";
 import type { Bot } from "@/state/store";
 
-const f = vi.hoisted(() => ({ state: {} as { bots: Bot[]; instances: unknown[] }, dispatch: vi.fn(), landed: vi.fn(), onDone: vi.fn(), onLeave: vi.fn(), reduced: true }));
+const f = vi.hoisted(() => ({ state: {} as { bots: Bot[]; instances: unknown[] }, dispatch: vi.fn(), landed: vi.fn(), onDone: vi.fn(), onLeave: vi.fn(), onSkip: vi.fn(), reduced: true }));
 vi.mock("@/state/store", () => ({ useStore: () => ({ state: f.state, dispatch: f.dispatch }) }));
 vi.mock("@/components/Avatar", () => ({ BotAvatar: () => null, MausAvatar: () => null }));
 vi.mock("@/components/mascot-clock", () => ({ usePrefersReducedMotion: () => f.reduced }));
@@ -55,6 +55,7 @@ beforeEach(() => {
   f.landed.mockReset();
   f.onDone.mockReset();
   f.onLeave.mockReset();
+  f.onSkip.mockReset();
   f.reduced = true;
   f.state = { bots: [maus()], instances: [CLAUDE, CHAT_ONLY] };
   stageIntro(null);
@@ -191,5 +192,28 @@ describe("the introduction", () => {
     expect(f.onDone).not.toHaveBeenCalled();
     expect(text()).toContain("Introducing your Chief of Staff");
     expect(welcoming).toBe("maus");
+  });
+
+  it("offers Not now, which ends the first run without a Chief and without touching the bots", async () => {
+    f.onSkip = vi.fn();
+    await act(async () => { root.render([createElement(Watch, { key: "w" }), createElement(ChiefIntro, { key: "c", replay: false, onDone: f.onDone, onLeave: f.onLeave, onSkip: f.onSkip })]); });
+    await tick(CHIEF_GUARD_MS);
+    expect(text()).toContain("Not now");
+    await press("Not now");
+    expect(f.onLeave).toHaveBeenCalledOnce();
+    await tick(CHIEF_FADE_MS);
+    expect(f.onSkip).toHaveBeenCalledExactlyOnceWith();
+    expect(f.onDone).not.toHaveBeenCalled();
+    expect(f.dispatch, "nothing is made or renamed").not.toHaveBeenCalled();
+  });
+
+  it("keeps Not now behind the input guard too", async () => {
+    f.onSkip = vi.fn();
+    await act(async () => { root.render([createElement(Watch, { key: "w" }), createElement(ChiefIntro, { key: "c", replay: false, onDone: f.onDone, onLeave: f.onLeave, onSkip: f.onSkip })]); });
+    await act(async () => { button("Not now")!.click(); });
+    await tick(CHIEF_GUARD_MS - 1);
+    expect(f.onSkip).not.toHaveBeenCalled();
+    await tick(CHIEF_FADE_MS);
+    expect(f.onSkip).not.toHaveBeenCalled();
   });
 });
