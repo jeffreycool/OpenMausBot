@@ -31,6 +31,10 @@ let launch = null;
 /** Where these updaters install without asking anything: Squirrel.Mac, and the per-user NSIS installer run silently. */
 const QUIET_PLATFORMS = new Set(["darwin", "win32"]);
 
+/** agentchat fork 本地改动：禁用应用内自动更新（fork 构建的 app-update.yml 仍指官方 feed，自更新会覆盖本地改动；
+ * 置 true 后 startUpdater 与 !isPackaged 同路径早退，更新器保持 idle。上游 merge 时删除本常量并还原判断）。 */
+const AGENTCHAT_DISABLE_AUTO_UPDATE = true;
+
 function quietRecord() {
   const file = join(app.getPath("userData"), "update-when-quiet.json");
   return {
@@ -190,7 +194,7 @@ export function attachUpdaterWindow(mainWindow) {
 
 /** `signals` (quietSignals): what tells a quiet moment; without them a downloaded update installs only on Restart or quit. */
 export function startUpdater(signals = null) {
-  if (!app.isPackaged) {
+  if (AGENTCHAT_DISABLE_AUTO_UPDATE || !app.isPackaged) {
     updaterCoordinator = null;
     setState({ status: "idle" });
     return;
