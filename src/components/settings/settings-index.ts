@@ -44,6 +44,9 @@ export interface SettingsPage {
   when: (ctx: SettingsContext) => boolean;
 }
 
+/** agentchat fork 本地改动：隐藏设置侧栏的「方案和账单」入口（上游 merge 时删除本常量并还原 plan 页的 when）。 */
+const AGENTCHAT_HIDE_CLOUD_BILLING = true;
+
 const notClient = (ctx: SettingsContext) => !ctx.client;
 /** What only an admin can use: a team's member isn't offered it at all (the installation's AI, desktops, spending, data). */
 const adminPage = (ctx: SettingsContext) => !ctx.client && !(ctx.team && !ctx.admin);
@@ -78,7 +81,7 @@ export const SETTINGS_PAGES: readonly SettingsPage[] = [
     synonyms: ["installations", "fleet", "clients", "tenants"] },
   { id: "account", owner: "account", labelKey: "settings.page.account", when: () => true,
     synonyms: ["account", "sign in", "log in", "log out", "sign out", "email", "organization", "mausbot cloud"] },
-  { id: "plan", owner: "account", labelKey: "settings.page.plan", icon: CreditCard, when: (ctx) => !ctx.client && ctx.plan,
+  { id: "plan", owner: "account", labelKey: "settings.page.plan", icon: CreditCard, when: (ctx) => !AGENTCHAT_HIDE_CLOUD_BILLING && !ctx.client && ctx.plan,
     synonyms: ["plan", "billing", "subscription", "invoice", "receipt", "payment", "card", "upgrade", "trial", "cancel", "refund", "usage & billing", "mausbot cloud", "weekly", "limits"] },
   { id: "app", owner: "app", labelKey: "settings.page.app", when: () => true,
     synonyms: ["this app", "updates", "update", "version", "help", "about", "servers", "your computers", "environments", "diagnostics", "logs", "tour"] },

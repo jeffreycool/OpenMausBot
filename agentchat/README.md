@@ -17,3 +17,10 @@ agentChat integration module for this fork. **Additive-only**: everything agentC
 ## Merge discipline
 
 - Merge upstream/main into agentchat weekly. Never edit upstream files here; escalate needed upstream changes as public PRs (see enterprise/README.md philosophy: customer's own repo, never a fork).
+
+## 上游文件本地改动登记表（上游 merge 时需重放）
+
+| 文件 | 改动 | 原因 | 上游 merge 时 |
+|------|------|------|--------------|
+| `src/components/settings/settings-index.ts` | 新增常量 `AGENTCHAT_HIDE_CLOUD_BILLING = true`，并让 `plan` 页的 `when` 前置 `!AGENTCHAT_HIDE_CLOUD_BILLING &&` | 本地 fork 构建隐藏设置侧栏「方案和账单」入口（隐藏后所有 `openSettings("plan")` 入口经 `resolveSettingsTarget` 优雅降级到 Overview） | 删除该常量并还原 `when` 原条件 `!ctx.client && ctx.plan` |
+
