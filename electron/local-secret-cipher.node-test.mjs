@@ -132,7 +132,7 @@ test("an unwritable key location falls back to the operating-system cipher", asy
   const { lines, note } = log();
   const io = {
     ...fs,
-    writeFileSync: (...args) => { throw new Error("disk full"); },
+    writeFileSync: (..._args) => { throw new Error("disk full"); },
   };
   const store = adapter({ dir, legacy, io, note });
   assert.equal(await store.available(), true, "legacy availability carries the answer");

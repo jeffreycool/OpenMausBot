@@ -57,7 +57,7 @@ function fixture() {
       f.stores.push(store);
       return store;
     },
-    credentialEncryptionFor: file => ({ available: async () => true, encrypt: async value => Buffer.from(value, "utf8"), decrypt: async value => ({ result: value.toString("utf8"), shouldReEncrypt: false }) }),
+    credentialEncryptionFor: _file => ({ available: async () => true, encrypt: async value => Buffer.from(value, "utf8"), decrypt: async value => ({ result: value.toString("utf8"), shouldReEncrypt: false }) }),
     createManagedDesktopClient: options => { f.onState = options.onState; f.clientOptions = options; return client; },
     tailnetShare: { recheck: () => { f.tailnetRechecks = (f.tailnetRechecks ?? 0) + 1; } },
     createOrgLibrary: options => { f.libraryOptions = options; return f.library; },
