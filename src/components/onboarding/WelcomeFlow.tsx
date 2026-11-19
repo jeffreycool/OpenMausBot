@@ -167,7 +167,7 @@ export function WelcomeFlow({
       )}
     >
       {chief ? (
-        <ChiefIntro replay={replay} onLeave={fadeScrim} onDone={(botId) => void finish("completed", botId)} />
+        <ChiefIntro replay={replay} onLeave={fadeScrim} onDone={(botId) => void finish("completed", botId)} onSkip={() => void finish("skipped", null)} />
       ) : (
         <MeetScreen hosted={hosted} onNext={next} />
       )}
