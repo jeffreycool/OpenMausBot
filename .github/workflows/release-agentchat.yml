@@ -1,0 +1,110 @@
+# FORK-ONLY workflow (agentchat branch, jeffreycool/OpenMausBot).
+# Do not replay onto upstream during merges.
+#
+# Upstream .github/workflows/release.yml signs, notarizes, and gates releases
+# with repo secrets this fork does not have (MAC_CERT_*, APPLE_API_*,
+# RELEASES_PAT), so it cannot run here. This workflow instead:
+#   - triggers on any v* tag push (plus manual dispatch)
+#   - builds unsigned: macOS skips codesign discovery (CSC_IDENTITY_AUTO_DISCOVERY
+#     =false → ad-hoc signature; dmg signing quietly no-ops with no
+#     identity), Windows has no signing config upstream either
+#   - uploads every artifact to the tag's GitHub Release on this repo
+# Build steps mirror upstream release.yml's mac/windows jobs (same runners,
+# same package scripts), minus signing/notarization/smoke gates.
+name: Release (agentchat fork)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Create the Release shell first so the two build jobs never race on it.
+    name: Create the release for the tag
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Create the release (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release already exists"
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --verify-tag --title "$GITHUB_REF_NAME" \
+              --notes "agentchat fork build (unsigned). macOS first launch: 右键 Open / right-click -> Open to pass Gatekeeper."
+          fi
+
+  mac:
+    name: macOS arm64 + x64 (unsigned)
+    needs: release
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Clean generated output
+        run: rm -rf dist dist-server dist-native release
+      - name: Package both architectures (unsigned)
+        # macos-15 runners have 7 GB, so Node's default heap stops near 2 GB;
+        # mirror upstream's raised heap for the server typecheck.
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: pnpm package:mac
+      - name: Upload macOS artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  win:
+    name: Windows x64 (unsigned)
+    needs: release
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ff378ebe6b225b0680b81c1ad4498ae0d1d3a5e3 # v6.0.10
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Clean generated output
+        shell: bash
+        run: rm -rf dist dist-server release
+      - name: Package Windows x64 (unsigned)
+        run: pnpm package:win
+      - name: Upload Windows artifacts to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/*.zip
+            release/latest.yml
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

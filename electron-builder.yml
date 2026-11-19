@@ -13,9 +13,13 @@ protocols:
 # --publish never, and must be uploaded to the GitHub release alongside the
 # artifacts — a release missing latest.yml leaves every Windows install
 # stranded on its installed version.
+# FORK (agentchat): publishes point at jeffreycool/OpenMausBot, not upstream —
+# fork builds must never read or write milind-soni's release feeds. The fork
+# also disables in-app auto-update entirely (electron/updater.mjs), so this
+# config only governs which feed app-update.yml is baked against.
 publish:
   - provider: github
-    owner: milind-soni
+    owner: jeffreycool
     repo: OpenMausBot
 
 directories:

@@ -24,4 +24,6 @@ agentChat integration module for this fork. **Additive-only**: everything agentC
 |------|------|------|--------------|
 | `src/components/settings/settings-index.ts` | 新增常量 `AGENTCHAT_HIDE_CLOUD_BILLING = true`，并让 `plan` 页的 `when` 前置 `!AGENTCHAT_HIDE_CLOUD_BILLING &&` | 本地 fork 构建隐藏设置侧栏「方案和账单」入口（隐藏后所有 `openSettings("plan")` 入口经 `resolveSettingsTarget` 优雅降级到 Overview） | 删除该常量并还原 `when` 原条件 `!ctx.client && ctx.plan` |
 | `electron/updater.mjs` | 新增常量 `AGENTCHAT_DISABLE_AUTO_UPDATE = true`，并让 `startUpdater` 早退判断前置该常量 | fork 构建的 `app-update.yml` 仍指官方 feed，自动更新会用官方版覆盖本地改动；禁用后更新器保持 idle | 删除该常量并还原 `if (!app.isPackaged)` 原判断 |
+| `electron-builder.yml` | `publish.owner` 从 `milind-soni` 改为 `jeffreycool`（repo 不变） | fork 发布必须写自己仓库的 Releases；baked `app-update.yml` 也随之指 fork（fork 已禁自动更新，此配置只决定 feed 指向） | merge 时还原 `owner: milind-soni` |
+| `.github/workflows/release-agentchat.yml` | 新增 fork-only 发布 workflow：`v*` tag push 触发，macos-15（arm64+x64 dmg/zip，`CSC_IDENTITY_AUTO_DISCOVERY=false` 免签名）+ windows-latest（x64 nsis/zip）双 job，产物上传本仓库该 tag 的 Release | 上游 release.yml 依赖 fork 没有的签名/公证/RELEASES_PAT secrets，无法在 fork 运行；此 workflow 复用上游同款 runner/打包脚本，仅去签名与 smoke 门禁 | fork-only，merge 时保留不还原、不上游 |
 
