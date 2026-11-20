@@ -113,3 +113,27 @@ it("forgets a person's other marks of their own with their read lines", () => {
   reads.forgetPerson("p_ada");
   expect(forgotten, "even with no read line of theirs").toEqual(["p_ada"]);
 });
+
+it("marks a roster room's lines with who has read them, never the viewer's own email", () => {
+  const dir = mkdtempSync(join(tmpdir(), "room-reads-"));
+  const reads = createRoomReads(dir);
+  const thread = [
+    { id: "m1", role: "user", at: 1 }, { id: "m2", role: "bot", at: 2 },
+    { id: "m3", role: "user", at: 3 }, { id: "m4", role: "bot", at: 4 },
+  ];
+  const group = { id: "room", threadId: "main", unread: true, people: ["ada@acme.test", "ben@acme.test", "cleo@acme.test"] } as WireGroup;
+  const rooms = createPersonRooms({ reads, store: () => ({
+    activePath: () => thread, messagesFor: () => thread, botByThread: () => null,
+  }), newestMessageId: () => "m4",
+  shared: () => false, wireBot: () => null, publicGroupState: () => group, broadcast: () => {},
+  });
+  const ada = personKey({ id: "", email: "ada@acme.test" }), ben = personKey({ id: "", email: "ben@acme.test" });
+  reads.read("room", ben, "m2", "main");
+  reads.read("room", ada, "m4", "main");
+  const seen = rooms.groupForPerson(group, ada);
+  expect(seen.peopleReads, "Ben read to m2; Ada's own email never among the marks").toEqual({ m1: ["ben@acme.test"], m2: ["ben@acme.test"] });
+  expect(rooms.groupForPerson(group, ben).peopleReads).toEqual({ m1: ["ada@acme.test"], m2: ["ada@acme.test"], m3: ["ada@acme.test"], m4: ["ada@acme.test"] });
+  // A roster entry nobody has signed in as yet (cleo) marks nothing; a room without a roster carries no marks at all.
+  const unrostered = { ...group, people: undefined };
+  expect(rooms.groupForPerson(unrostered, ada).peopleReads).toBeUndefined();
+});

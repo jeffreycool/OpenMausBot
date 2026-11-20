@@ -106,6 +106,33 @@ export interface PersonRoomsDeps {
 export function createPersonRooms(deps: PersonRoomsDeps) {
   const { reads } = deps;
   const atOf = (threadId: string) => (id: string) => deps.store().messagesFor(threadId).find((message) => message.id === id)?.at;
+  /** How many of a path's newest lines carry read marks, matching the message page a client loads by default
+   * (DEFAULT_PAGE in server/index.ts). */
+  const READ_MARKS_WINDOW = 50;
+  /** A room's read marks for the wire (`peopleReads`): each roster email's read line turned into which of the
+   * room's newest lines they have read, the viewer's own email never among them. A roster entry nobody has read
+   * past their first line simply marks nothing yet. */
+  function readMarksFor(group: WireGroup, viewer: string, path: readonly PathMessage[]): Record<string, string[]> | undefined {
+    if (!reads || !group.people?.length) return undefined;
+    const window = path.slice(-READ_MARKS_WINDOW);
+    if (!window.length) return undefined;
+    const marks: Record<string, string[]> = {};
+    for (const email of group.people) {
+      const reader = personKey({ id: "", email });
+      if (reader === viewer) continue;
+      const line = reads.readUpTo(group.id, reader, group.threadId)
+        ?? (() => { const legacy = reads.readUpTo(group.id, reader); return legacy && path.some((message) => message.id === legacy) ? legacy : undefined; })();
+      if (!line) continue;
+      let cut = window.findIndex((message) => message.id === line) + 1;
+      if (cut === 0) {
+        const readAt = atOf(group.threadId)(line);
+        // A line gone from the room reads as read (roomUnreadFor's own rule); else up to the last line at or before its time.
+        cut = readAt === undefined ? window.length : window.findLastIndex((message) => (message.at ?? 0) <= readAt) + 1;
+      }
+      for (const message of window.slice(0, cut)) (marks[message.id] ??= []).push(email);
+    }
+    return Object.keys(marks).length ? marks : undefined;
+  }
   /** A room's unread mark and read line as this person has read it, on a Team Cloud; the room as it is anywhere else. */
   function groupForPerson(group: WireGroup, person: string | null): WireGroup {
     if (!reads || !person) return group;
@@ -120,10 +147,11 @@ export function createPersonRooms(deps: PersonRoomsDeps) {
       return { ...task, unread };
     });
     const unread = tasks ? tasks.some((task) => task.unread) : roomUnreadFor(currentPath, currentRead, group.unread, atOf(group.threadId));
-    if (unread === group.unread && currentRead === group.lastReadMessageId &&
+    const peopleReads = readMarksFor(group, person, currentPath);
+    if (unread === group.unread && currentRead === group.lastReadMessageId && peopleReads === group.peopleReads &&
       (!tasks || tasks.every((task, index) => task.unread === group.tasks?.[index]?.unread))) return group;
     const { lastReadMessageId: _shared, ...rest } = group;
-    return { ...rest, tasks, unread, ...(currentRead ? { lastReadMessageId: currentRead } : {}) };
+    return { ...rest, tasks, unread, ...(currentRead ? { lastReadMessageId: currentRead } : {}), ...(peopleReads ? { peopleReads } : {}) };
   }
   /** A bot's shared conversation's unread mark and read line as this person read it, on a Team Cloud; the task as it is
    * anywhere else and for a private chat. Nobody's read line but their own goes out. */

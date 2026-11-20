@@ -254,5 +254,11 @@ posixOnly("the A1 unlock pack on a shared self-hosted server", () => {
     expect(adas.lastReadMessageId).toBeTruthy();
     expect(bobs.lastReadMessageId).toBeUndefined();
     expect(adas.unread).toBe(false);
+    // The roster's read marks reach the wire: Ada has read the room's lines, her email never on her own copy.
+    expect(adas.peopleReads).toBeUndefined();
+    const adaLines = Object.entries(bobs.peopleReads ?? {}).filter(([, who]: [string, any]) => who.includes(ADA));
+    expect(adaLines.length, JSON.stringify(bobs.peopleReads)).toBeGreaterThan(0);
+    for (const [, who] of adaLines) expect(who).not.toContain(BOB);
+    expect(bobs.peopleReads![adas.lastReadMessageId]).toContain(ADA);
   });
 });

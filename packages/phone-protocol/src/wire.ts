@@ -918,6 +918,11 @@ export interface WireGroup {
    * stored value is simply ignored). Absent = the derived floor only, as
    * before. Sent to admins only; a member's copy never carries it. */
   audience?: BotVisibility;
+  /** Who has read which line: a message id mapped to the roster emails of the
+   * people whose read line reached it (never the viewer's own). Derived from
+   * each person's read line at projection time, never persisted. Absent = no
+   * read marks (an older server, or nobody has read anything). */
+  peopleReads?: Record<string, string[]>;
   /** True while any member (or hand-off) is mid-turn. Computed at
    * projection time, never persisted. */
   working: boolean;
