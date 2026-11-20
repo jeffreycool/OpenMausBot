@@ -843,6 +843,24 @@ export interface GroupTask {
   busyBotId?: string | null;
 }
 
+/** One signed-in person on a self-hosted server's people directory (GET
+ * /api/people): the sign-in list, plus every address that holds a session.
+ * `here` only when the server runs presence; `you` marks the caller's own
+ * entry. A client that gets no directory (an older server answers 404) runs
+ * without one. */
+export interface PersonEntry {
+  email: string;
+  name: string;
+  role: "admin" | "member";
+  here?: boolean;
+  you?: true;
+}
+
+/** The response of GET /api/people. */
+export interface PeopleDirectoryResponse {
+  people: PersonEntry[];
+}
+
 /** A room as a client may see it: the record plus the computed working flag. */
 export interface WireGroup {
   /** Computed from the usage ledger, not stored in groups.json. */
@@ -888,6 +906,18 @@ export interface WireGroup {
   /** The narrowest audience this room has ever had: a bot leaving never
    * widens who may see the transcript. Sent to admins only. */
   audienceFloor?: BotVisibility;
+  /** The room's people as named participants (email addresses, at most 500).
+   * A roster for @-mentions, presence and the room header, never a permission
+   * gate: who sees the room is still every member bot's visibility, the
+   * audience floor and the explicit audience. Absent = no roster (the room's
+   * people are whoever has spoken). */
+  people?: string[];
+  /** An explicit audience for this room, narrowing only: someone sees the
+   * room only when they see every member bot, the audience floor and this.
+   * Never wider than what the members' visibility already allows (a wider
+   * stored value is simply ignored). Absent = the derived floor only, as
+   * before. Sent to admins only; a member's copy never carries it. */
+  audience?: BotVisibility;
   /** True while any member (or hand-off) is mid-turn. Computed at
    * projection time, never persisted. */
   working: boolean;
