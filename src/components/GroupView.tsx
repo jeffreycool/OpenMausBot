@@ -22,7 +22,7 @@ import { RoomHoldsBanner } from "./RoomHoldsBanner";
 import { ThreadChip } from "./ThreadChip";
 import { ToolActivity } from "./ToolActivity";
 import { ThreadRefText } from "./ThreadRefs";
-import { TurnPresence } from "./TurnPresence";
+import { TurnPresence } from "./TurnPresence"; import { RoomReadMarks } from "./RoomReadMarks";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { CompactionChip, DigestChip } from "./DigestChip";
 import { roomActivityVisible } from "@/lib/room-activity";
@@ -303,7 +303,7 @@ function RoomTextMessage({
           {formatTime(m.at)}
         </span>
       </div>
-      <ReactionChips threadId={group.threadId} message={m} bots={members} align={user ? "end" : "start"} canReact={canReact} />
+      <ReactionChips threadId={group.threadId} message={m} bots={members} align={user ? "end" : "start"} canReact={canReact} />{user && <RoomReadMarks group={group} message={m} />}
       <ForkLinks kind="group" ownerId={group.id} threadId={group.threadId} messageId={m.id} phone={phone} />
       {!user && m.routedBy && <RoutedByLine routedBy={m.routedBy} />}
     </div>
