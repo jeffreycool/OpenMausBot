@@ -77,8 +77,9 @@ export function createPeopleDirectory(deps: PersonDirectoryDeps) {
         return list().map((one) => ({ email: one.email, role: one.role }));
       },
       /** Nothing to subscribe to: the roster is computed live, and only an
-       * admin's Settings change alters it (see the file comment). */
-      onChange(): () => void {
+       * admin's Settings change alters it (see the file comment), so the
+       * listener is taken and never called. */
+      onChange(_listener: (email: string, change: "joined" | "role" | "left") => void): () => void {
         return () => {};
       },
     },
