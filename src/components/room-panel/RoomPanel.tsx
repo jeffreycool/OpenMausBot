@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { ChevronRight, FileText, Folder, MessagesSquare, Users, X } from "lucide-react";
+import { Contact, ChevronRight, FileText, Folder, MessagesSquare, Users, X } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -8,6 +8,7 @@ import { closeRoomPanel } from "@/lib/room-panel";
 import { responderShortLabel } from "@/lib/room-responder";
 import type { LocaleKey } from "@/locales";
 import { useStore, type Bot, type Group } from "@/state/store";
+import { useTeamPeople } from "@/state/team-people";
 import { BotAvatar } from "../Avatar";
 import { useCaptionChrome } from "../DesktopCapabilities";
 import { ManageMembersPanel } from "../ManageMembersPanel";
@@ -16,13 +17,15 @@ import { RoomMoreMenu } from "../RoomMoreMenu";
 import { RoomWorkingFolder, roomWorkingFolder } from "../RoomWorkingFolder";
 import { buttonCls, Card, ColRow, NavRow, PageHeader, roundButtonCls, rowCls, RowText } from "../bot-panel/rows";
 import { sidePanelCls } from "../bot-panel/side-panel";
+import { PeoplePage } from "./PeoplePage";
 import { ResponderPage } from "./ResponderPage";
 
-type RoomPage = "responder" | "folder";
+type RoomPage = "responder" | "folder" | "people";
 
 const PAGES: Record<RoomPage, { title: LocaleKey; intro: LocaleKey }> = {
   responder: { title: "room.panel.whoResponds", intro: "room.panel.responder.intro" },
   folder: { title: "room.folder.title", intro: "room.folder.detail" },
+  people: { title: "room.panel.people", intro: "room.panel.people.intro" },
 };
 
 function RoomHero({ group, members }: { group: Group; members: Bot[] }) {
@@ -116,6 +119,7 @@ function InstructionsRow({ group }: { group: Group }) {
 export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: boolean }) {
   const { state } = useStore();
   const { dragProps } = useCaptionChrome();
+  const team = useTeamPeople();
   const [page, setPage] = useState<RoomPage | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const dialogRef = useRef<HTMLElement>(null);
@@ -128,6 +132,9 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
   );
   const folder = roomWorkingFolder(group);
   const closeMembers = useCallback(() => setMembersOpen(false), []);
+  // The People row appears for the person who can add people (an admin) and for any room that already has some;
+  // without either there is nothing to see or do on that page, so no row leads there.
+  const showPeople = team?.admin === true || (group.people?.length ?? 0) > 0;
 
   const openPage = (next: RoomPage) => {
     setPage(next);
@@ -208,6 +215,15 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
                   onClick={() => openPage("folder")}
                 />
                 <InstructionsRow group={group} />
+                {showPeople && (
+                  <NavRow
+                    data-panel-page="people"
+                    icon={Contact}
+                    title={t("room.panel.people")}
+                    value={String(group.people?.length ?? 0)}
+                    onClick={() => openPage("people")}
+                  />
+                )}
                 <NavRow
                   ref={membersRowRef}
                   data-panel-row="members"
@@ -223,7 +239,9 @@ export function RoomPanel({ group, overlay = false }: { group: Group; overlay?: 
               <span id="room-panel-title" className="sr-only">{group.name}</span>
               <PageHeader back={group.name} title={t(PAGES[page].title)} intro={t(PAGES[page].intro)} onBack={back} />
               <div className="mt-4 flex flex-col gap-3">
-                {page === "responder" ? <ResponderPage group={group} members={members} /> : <RoomWorkingFolder group={group} heading={false} />}
+                {page === "responder" ? <ResponderPage group={group} members={members} />
+                  : page === "people" ? <PeoplePage group={group} members={members} />
+                    : <RoomWorkingFolder group={group} heading={false} />}
               </div>
             </div>
           )}
