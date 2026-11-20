@@ -112,7 +112,11 @@ export function createBotCreateRoutes(deps: BotCreateRouteDeps): RouteHandler {
       if ("error" in kept) return json(res, kept.error.includes("already") ? 409 : 400, { error: kept.error });
       const { id: _id, threadId: _threadId, ...rest } = body;
       body = rest;
-      const template = resolveBotCreationDefaults(cfg.newBotDefaults, body);
+      const template = resolveBotCreationDefaults(cfg.newBotDefaults, body, {
+        // The place's own language, the same one a new bot's greeting reads (an empty override follows this computer's).
+        language: () => cfg.language || Intl.DateTimeFormat().resolvedOptions().locale,
+        everyBotRules: () => cfg.everyBotRules,
+      });
       const settings = template.profile;
       if (body.preset !== undefined && (typeof body.preset !== "string" || !/^[\w-]{1,64}$/.test(body.preset))) {
         return json(res, 400, { error: "preset must be a preset id from New bot" });
@@ -210,7 +214,11 @@ export function createBotCreateRoutes(deps: BotCreateRouteDeps): RouteHandler {
         const { chiefOfStaff: _chief, managedSections: _managed, toolScope: _toolScope, ...ordinary } = settings;
         store.patchBot(bot.id, {
           // Store creation completed the workspace defaults (effort included): the rest of the template must not undo them.
-          ...ordinary, name: bot.name, section, modelSelection: bot.modelSelection,
+          ...ordinary,
+          // The factory reply-language line lands here, after the greeting, so a bot with no instructions of its own
+          // still offers its setup card; a soul the creator gave went in with the bot itself.
+          ...(template.languageSoul ? { soul: template.languageSoul } : {}),
+          name: bot.name, section, modelSelection: bot.modelSelection,
           mascotExpression: ordinary.mascotExpression ?? undefined,
           avatarUrl: ordinary.avatarUrl || undefined,
           // Auto with Approve for me stays Auto: This computer with it needs the warning only the bot's Settings shows.

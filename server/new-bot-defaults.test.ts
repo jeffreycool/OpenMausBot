@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { newBotDefaultsSchema, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
+import { newBotDefaultsSchema, newBotReplyLanguageLine, resolveBotCreationDefaults } from "./new-bot-defaults.ts";
 import { parseConfigPatch } from "./config.ts";
 
 describe("new-bot templates", () => {
@@ -78,5 +78,45 @@ describe("new-bot templates", () => {
   it("bounds the complete template, including multiple individually valid files", () => {
     const memory = Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`memory/file${index}.md`, "x".repeat(262_144)]));
     expect(newBotDefaultsSchema.safeParse({ memory }).success).toBe(false);
+  });
+});
+
+describe("the factory reply-language line", () => {
+  const zhLine = "始终使用简体中文回复，除非用户明确使用其他语言。";
+  const zhTwLine = "一律使用繁體中文回覆，除非使用者明確要求其他語言。";
+  const app = (language?: string, everyBotRules?: string) => ({ language: () => language, everyBotRules: () => everyBotRules });
+
+  it("seeds a Chinese app's new bots with a Chinese line, and no other language", () => {
+    // Apart from the profile: the creation route lands it only after the greeting, so the setup card still shows.
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-CN")).languageSoul).toBe(zhLine);
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-CN")).profile.soul).toBeUndefined();
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh")).languageSoul).toBe(zhLine);
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-Hans-CN")).languageSoul).toBe(zhLine);
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-TW")).languageSoul).toBe(zhTwLine);
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-Hant")).languageSoul).toBe(zhTwLine);
+    // No line at all outside Chinese: an install in English (or any other language) sees no soul it never asked for.
+    for (const language of ["en", "en-US", "de", "es-MX", "ko", undefined]) {
+      expect(resolveBotCreationDefaults(undefined, {}, app(language)).languageSoul, language).toBeUndefined();
+    }
+    expect(newBotReplyLanguageLine("zh-HK")).toBe(zhTwLine);
+    expect(newBotReplyLanguageLine("fr")).toBe("");
+  });
+
+  it("never overwrites a soul its creator or the saved defaults wrote", () => {
+    expect(resolveBotCreationDefaults(undefined, { settings: { soul: "Always answer bluntly." } }, app("zh-CN")).languageSoul).toBeUndefined();
+    expect(resolveBotCreationDefaults(undefined, { settings: { soul: "Always answer bluntly." } }, app("zh-CN")).profile.soul).toBe("Always answer bluntly.");
+    const saved = newBotDefaultsSchema.parse({ profile: { soul: "Template soul" } });
+    expect(resolveBotCreationDefaults(saved, {}, app("zh-CN")).languageSoul).toBeUndefined();
+    expect(resolveBotCreationDefaults(saved, {}, app("zh-CN")).profile.soul).toBe("Template soul");
+    // An explicit empty soul stays empty: the creator asked for no standing instructions.
+    expect(resolveBotCreationDefaults(undefined, { settings: { soul: "" } }, app("zh-CN")).languageSoul).toBeUndefined();
+  });
+
+  it("skips the line when the rules for every bot already ask for Chinese, so the two never repeat", () => {
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-CN", "所有机器人的规则：始终使用简体中文回复。")).languageSoul).toBeUndefined();
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-CN", "Reply in Chinese in every conversation.")).languageSoul).toBeUndefined();
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-CN", "一律使用繁體中文回覆。")).languageSoul).toBeUndefined();
+    // Unrelated rules leave the line in place.
+    expect(resolveBotCreationDefaults(undefined, {}, app("zh-CN", "Never spend more than 20 dollars without asking.")).languageSoul).toBe(zhLine);
   });
 });

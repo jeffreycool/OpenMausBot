@@ -6,6 +6,7 @@ import { EFFORT_LEVELS, MAUS_COLOR_NAMES } from "../shared/wire.ts";
 import { isModelVariant } from "./contracts.ts";
 import { normalizeCronSchedule } from "../shared/routine-schedule.ts";
 import { parseToolScope, type ToolScope } from "../shared/tool-scope.ts";
+import { byLanguage } from "./language.ts";
 
 const strings = (max: number, length: number) => z.array(z.string().max(length)).max(max);
 const clock = z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
@@ -130,7 +131,31 @@ function settingsError(error: z.ZodError): Error {
   return new Error(field && issue.message.startsWith(String(issue.path[0])) ? issue.message : `${field || "the bot"} is not valid`);
 }
 
-export function resolveBotCreationDefaults(saved: NewBotDefaults | undefined, body: Record<string, unknown>) {
+/** The standing-instructions line a new bot starts with when its app's language pins one; empty in English and every
+ * other language, so no install outside Chinese sees a soul it never asked for. */
+const REPLY_LANGUAGE_LINES: { en: string } & Record<string, string> = {
+  en: "",
+  zh: "始终使用简体中文回复，除非用户明确使用其他语言。",
+  "zh-tw": "一律使用繁體中文回覆，除非使用者明確要求其他語言。",
+};
+
+export function newBotReplyLanguageLine(language?: string): string {
+  return byLanguage(REPLY_LANGUAGE_LINES, language);
+}
+
+/** The rules for every bot already ask for Chinese (either script, or by name): they are read after the standing
+ * instructions, so the factory line would only repeat them. */
+function everyBotRulesAskChinese(rules: string | undefined): boolean {
+  return /中文|汉语|漢語|简体|簡體|繁體|chinese/i.test(rules ?? "");
+}
+
+/** What a new bot takes from this install itself: its language (the one set in Settings, else this computer's). */
+export interface CreationApp {
+  language?(): string | undefined;
+  everyBotRules?(): string | undefined;
+}
+
+export function resolveBotCreationDefaults(saved: NewBotDefaults | undefined, body: Record<string, unknown>, app?: CreationApp) {
   if (body.useDefaults !== undefined && typeof body.useDefaults !== "boolean") {
     throw Object.assign(new Error("useDefaults must be true or false"), { status: 400 });
   }
@@ -142,11 +167,20 @@ export function resolveBotCreationDefaults(saved: NewBotDefaults | undefined, bo
   // A new bot starts confined to its own folders unless its creator or the saved defaults said otherwise
   // (existing bots, whose record keeps no dirAccess, stay unrestricted).
   if (profile.dirAccess === undefined) profile.dirAccess = { mode: "workspace" };
+  // The factory reply-language line: a new bot in a Chinese app starts with it, so its first replies are in Chinese.
+  // A soul its creator or the saved defaults wrote is left exactly as given, and the rules for every bot asking for
+  // Chinese already cover the line, so neither is repeated. It comes back apart from the profile: the creation route
+  // lands it only after the greeting, so a bot with no instructions of its own still offers its setup card.
+  let languageSoul: string | undefined;
+  if (profile.soul === undefined) {
+    const line = newBotReplyLanguageLine(app?.language?.());
+    if (line && !everyBotRulesAskChinese(app?.everyBotRules?.())) languageSoul = line;
+  }
   for (const key of ["name", "title", "description", "modelSelection", "section"] as const) {
     if (Object.hasOwn(body, key)) Object.assign(profile, { [key]: key === "section" && body[key] === null ? "" : body[key] });
   }
   const resolved = botDefaultsProfileSchema.safeParse(profile);
   if (!resolved.success) throw Object.assign(settingsError(resolved.error), { status: 400 });
   if (!resolved.data.name?.trim()) delete resolved.data.name;
-  return { ...template, profile: resolved.data };
+  return { ...template, profile: resolved.data, ...(languageSoul ? { languageSoul } : {}) };
 }
