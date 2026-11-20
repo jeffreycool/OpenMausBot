@@ -6,6 +6,7 @@ import { mentionablePeople } from "../../shared/person-mention";
 import type { PersonPresence } from "../../shared/team-presence";
 import type { NeedsYouItem } from "../../shared/today";
 import { api } from "./api";
+import { loadDirectoryPeople } from "./people";
 import { teamOfConfig } from "./team-chats";
 import { openAsksOf } from "@/lib/bot-unread";
 import { readSessionState } from "@/lib/session";
@@ -133,19 +134,27 @@ export function needsYouVersion(bots: readonly VersionedBot[], groups: ReadonlyA
 }
 
 let peopleTimer: ReturnType<typeof setTimeout> | null = null;
+/** Whether the people on screen came from a self-hosted server's directory rather than a team: their refresh paths
+ * follow the source they came from. */
+let directorySource = false;
 /** Someone's name or picture may have changed (every config frame follows a profile save): the people catch up
  * shortly, once. */
 function refreshPeople(): void {
   if (!snapshot || peopleTimer) return;
   peopleTimer = setTimeout(() => {
     peopleTimer = null;
-    void loadPeople().then((people) => { if (snapshot) publish({ ...snapshot, ...people }); }).catch(() => {});
+    const load = directorySource ? loadDirectoryPeople() : loadPeople();
+    void load.then((people) => { if (snapshot && people) publish({ ...snapshot, ...people }); }).catch(() => {});
   }, 800);
 }
 
 /** Someone joined, left or changed role (theirs or this person's own): the people and this session's role again. */
 export function reloadTeamPeople(): void {
   if (!snapshot) return;
+  if (directorySource) {
+    void loadDirectoryPeople().then((people) => { if (snapshot && people) publish({ ...snapshot, ...people }); }).catch(() => {});
+    return;
+  }
   void Promise.all([loadPeople(), readSessionState()]).then(([people, session]) => {
     if (snapshot) publish({ ...snapshot, ...people, admin: adminOf(session) });
   }).catch(() => {});
@@ -179,16 +188,30 @@ function loadTeam(): void {
 /** The people could not be read: try again. */
 export const retryTeamPeople = loadTeam;
 
-/** Keeps the people and this person's Needs you in step with the page's server; nothing off a team. */
+/** Keeps the people and this person's Needs you in step with the page's server. On a team, the team's people;
+ * off one, a self-hosted server's directory may still be there (TODO seam: GET /api/people, agentchat
+ * README "server-unlock") — one quiet attempt, and without it the people stay off, exactly as before. */
 export function useTeamPeopleLoader(config: unknown, botsVersion: unknown) {
   const teamId = teamOfConfig(config)?.id ?? null;
   useEffect(() => {
-    if (!teamId) { generation += 1; publish(null); setStatus("ready"); return; }
-    loadTeam();
+    const mine = ++generation;
+    if (teamId) {
+      directorySource = false;
+      loadTeam();
+      return () => { generation += 1; };
+    }
+    directorySource = false;
+    void loadDirectoryPeople().then((people) => {
+      if (mine !== generation) return;
+      directorySource = people !== null;
+      if (people) publish(people);
+      else publish(null);
+      setStatus("ready");
+    });
     return () => { generation += 1; };
   }, [teamId]);
   useEffect(() => { if (teamId) refreshNeedsYou(); }, [teamId, botsVersion]);
-  useEffect(() => { if (teamId) refreshPeople(); }, [teamId, config]);
+  useEffect(() => { if (teamId || directorySource) refreshPeople(); }, [teamId, config]);
 }
 
 /** After an owner changed here: the people list stays, Needs you catches up. */

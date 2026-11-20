@@ -186,7 +186,7 @@ export interface Group extends Pick<WireGroup, "memberContext" | "queue" | "chie
   heldMessages?: Record<string, import("../../shared/wire").RoomHeldMessage[]>;
   tasks?: GroupTask[];
   messages: Message[];
-  hasMore?: boolean;
+  hasMore?: boolean; people?: string[]; peopleReads?: Record<string, string[]>; // TODO(server-unlock): people = the room's human roster (emails), peopleReads = message id → the emails that read it; both arrive with the server unlock (agentchat-server-unlock, agentchat/README.md), absent until then, mirrors WireGroup there
 }
 
 export interface GroupTask {
@@ -621,7 +621,7 @@ export type Action =
       heldAtStart: readonly Message[];
     }
   | { type: "groupDeleted"; groupId: string }
-  | { type: "createGroup"; memberIds: string[]; name?: string; section?: string }
+  | { type: "createGroup"; memberIds: string[]; name?: string; section?: string; people?: string[] }
   | {
       type: "sendGroup";
       groupId: string;
@@ -635,7 +635,7 @@ export type Action =
   | {
       type: "patchGroup";
       groupId: string;
-      patch: Partial<Pick<Group, "name" | "bulletin" | "description" | "memberIds" | "defaultResponder" | "turnsPerMember" | "pinnedMessageId" | "section">>;
+      patch: Partial<Pick<Group, "name" | "bulletin" | "description" | "memberIds" | "defaultResponder" | "turnsPerMember" | "pinnedMessageId" | "section" | "people">>;  // people: TODO(server-unlock), see agentchat/README.md
     }
   | { type: "deleteGroup"; groupId: string }
   | { type: "newGroupTask"; groupId: string }
@@ -2591,7 +2591,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             body: JSON.stringify({
               memberIds: action.memberIds,
               name: action.name,
-              section: action.section,
+              section: action.section, ...(action.people?.length ? { people: action.people } : {}), // TODO(server-unlock): POST /api/groups accepts people once the server unlock lands (agentchat README); an older server strips it, roster starts empty.
               ...(window.ogb?.remoteClient?.active
                 ? { setup: { bulletin: "", defaultResponder: { kind: "mentions" } } }
                 : {}),
