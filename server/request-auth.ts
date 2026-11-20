@@ -338,6 +338,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/bots$/ },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+$/ },
   { methods: ["GET"], path: /^\/api\/team-map$/ },
+  // A self-hosted server's people directory (routes/people.ts): the sign-in list and who holds a session —
+  // addresses, display names and a presence mark, never a private conversation.
+  { methods: ["GET"], path: /^\/api\/people$/ },
   // a link into the organisation's Admin: identifiers only, and Admin authorizes its own visitor
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/slack-management$/ },
   { methods: ["GET"], path: /^\/api\/search$/ },

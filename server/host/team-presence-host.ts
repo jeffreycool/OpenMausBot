@@ -13,16 +13,22 @@ import { PASS, type RouteHandler } from "../routes/table.ts";
 import type { SessionRecord } from "../sessions.ts";
 import { deliverSseFrame, type SseFanoutClient } from "../sse-fanout.ts";
 import type { Store } from "../store.ts";
-import type { TeamPeople } from "../team-people.ts";
 import { createTeamPresence, realClock, type PresenceClock, type PresenceEvent } from "../team-presence.ts";
 
 export interface PresenceStream extends SseFanoutClient {
   person?: Pick<SessionRecord, "email" | "membershipAuthority" | "moveIn">;
 }
 
+/** What the host needs of a people roster: the team's (team-people.json) or a
+ * self-hosted server's directory (people-directory.ts). */
+export interface PresenceRoster {
+  list(): ReadonlyArray<{ email: string; role: "owner" | "admin" | "member" }>;
+  onChange(listener: (email: string, change: "joined" | "role" | "left") => void): () => void;
+}
+
 export interface TeamPresenceHostDeps {
-  /** Null off a team: then nothing here does anything. */
-  people: TeamPeople | null;
+  /** Null nowhere: the team's roster, or a self-hosted server's directory. */
+  people: PresenceRoster | null;
   /** A frame every team stream gets, replayed to one that reconnects (`team.people`). */
   broadcast(payload: Record<string, unknown>): void;
   audienceOf(threadId: string): Audience;
@@ -30,6 +36,10 @@ export interface TeamPresenceHostDeps {
   sharedWithOne?(threadId: string): boolean;
   store(): Pick<Store, "botByThread" | "groupByThread" | "bot">;
   visibleTo(viewer: Viewer): Pick<VisibleSet, "thread">;
+  /** A server without per-thread audiences (no Team Cloud): presence is rooms
+   * only, never a bot's thread — the one privacy rule a shared self-hosted
+   * server keeps, so nobody learns who has a private chat open. */
+  roomsOnly?: boolean;
   clock?: PresenceClock;
   /** OMB_TEAM_PRESENCE_GRACE_MS when not given (tests shorten it). */
   graceMs?: number;
@@ -39,9 +49,10 @@ const TAB = /^[\w-]{1,64}$/;
 const THREAD_ID = /^[\w-]{1,100}$/;
 const PEOPLE_GAP_MS = 1_000;
 
-/** The person a team session speaks for; null for anything else (the server itself, a move-in sign-in). */
+/** The person a signed-in session speaks for; null for anything else (the
+ * server itself, a move-in sign-in, a device without an address). */
 function teamPerson(session: PresenceStream["person"] | undefined): string | null {
-  return session?.membershipAuthority === "team" && session.email && !session.moveIn ? ownerEmail(session.email) : null;
+  return session?.email && !session.moveIn ? ownerEmail(session.email) : null;
 }
 
 const frameOf = (frame: PresenceFrame) => `data: ${JSON.stringify(frame)}\n\n`;
@@ -56,11 +67,13 @@ function send(stream: SseFanoutClient, frame: string): void {
 export function createTeamPresenceHost<Stream extends PresenceStream>(deps: TeamPresenceHostDeps) {
   const { people } = deps;
 
-  /** More than one person can read it: never a conversation that is someone's own, nor one with someone's own bot. */
+  /** More than one person can read it: never a conversation that is someone's own, nor one with someone's own bot, and
+   * where there are no per-thread audiences to say otherwise, never a bot's thread at all. */
   function shared(threadId: string): boolean {
     if (audienceMember(deps.audienceOf(threadId)) !== null && !deps.sharedWithOne?.(threadId)) return false;
     const store = deps.store();
     const group = store.groupByThread(threadId);
+    if (deps.roomsOnly && !group) return false;
     const bots = group ? group.memberIds.map((id) => store.bot(id)) : [store.botByThread(threadId)];
     return bots.length > 0 && bots.every((bot) => !!bot && !bot.defaultBot?.person);
   }
