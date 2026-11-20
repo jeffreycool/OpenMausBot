@@ -77,6 +77,9 @@ export interface BotMessageRouteDeps {
     dataContext?: DataContext; compactOnly?: boolean; cardContinuation?: boolean; editedMessageId?: string;
   }): Promise<Message>;
   usageTriggerFor(auth: RequestAuth): UsageTrigger;
+  /** Notes that a member (a client scope with an address) sent a direct-chat line on a shared self-hosted server, where
+   * such chats spend model budget with no approval gate yet: the log is the v1 gate's stopgap visibility. */
+  noteMemberSpend?(auth: RequestAuth, bot: string): void;
   messageSender(auth: RequestAuth): ResolvedSender | undefined;
   cloudGuestSendRefusal(auth: RequestAuth, threadId: string): string | null;
   cloudThreadRefusal(auth: RequestAuth, threadId: string): string | null;
@@ -258,6 +261,7 @@ export function createBotMessageRoutes(deps: BotMessageRouteDeps): RouteHandler 
       const trigger: UsageTrigger = onBehalfOf
         ? { kind: "user", ...(onBehalfOf.email ? { email: onBehalfOf.email } : {}), ...(onBehalfOf.name ? { label: onBehalfOf.name } : {}) }
         : usageTriggerFor(auth);
+      if (!onBehalfOf) deps.noteMemberSpend?.(auth, `a chat with "${bot.name}"`);
       // Security invariant: another bot's thread answers like a missing one, before anything reads a widget in it.
       if (pressed && !store.taskByThread(bot.id, threadId)) return json(res, 409, { error: "the bot switched tasks before it could receive the message" });
       const phone = fromPhone(auth);

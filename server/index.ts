@@ -830,6 +830,15 @@ function messageSender(auth: RequestAuth): ResolvedSender | undefined {
   return name ? { name, id: actorKey(auth) } : undefined;
 }
 
+/** A member's chats spend model budget with no approval gate (the v1 governance pack adds one): until then every turn
+ * their lines start on a shared self-hosted server is logged, so the admin can see whose use is drawing on the engines.
+ * A Team Cloud's own accounting covers this there; a server nobody else signs into has nobody to log. */
+function noteMemberSpend(auth: RequestAuth, where: string): void {
+  if (CLOUD_TEAM !== null || !sharedMembership()) return;
+  if (auth.kind !== "session" || auth.scopes.includes("admin") || !auth.session.email) return;
+  console.warn(`member spend: ${auth.session.email.trim().toLowerCase()} started a turn in ${where}`);
+}
+
 /** On a Team Cloud, whose conversation this is: the member's own, or the routine run's writer. */
 function teamConversationPerson(threadId: string): string | undefined {
   const member = audienceMember(teamHost.audienceOf(threadId));
@@ -12084,7 +12093,7 @@ ROUTES.push(createBotMessageRoutes({
   routines: () => routines,
   fromPhone: phones.fromPhone, notePhoneSend: phones.noteSend,
   desktopManaged: DESKTOP_MANAGED, cloudHome: Boolean(CLOUD_HOME), DirectSendRefused,
-  acceptDirectSend, directSendRefusal, startTurn, usageTriggerFor, messageSender, cloudGuestSendRefusal, cloudThreadRefusal, runOwners, runActor, resolveAccessRequest: (threadId, requestId, behavior, message) => lendingLifts?.resolve(threadId, requestId, behavior) ?? accessRequests.resolve(threadId, requestId, behavior, message), relayRefusal: CLOUD_TEAM ? (bot, email) => relayedSendRefusal(bot, email, Boolean(email && teamOwners.people?.list().some((one) => one.email === email && one.role !== "member"))) : undefined,
+  acceptDirectSend, directSendRefusal, startTurn, usageTriggerFor, noteMemberSpend, messageSender, cloudGuestSendRefusal, cloudThreadRefusal, runOwners, runActor, resolveAccessRequest: (threadId, requestId, behavior, message) => lendingLifts?.resolve(threadId, requestId, behavior) ?? accessRequests.resolve(threadId, requestId, behavior, message), relayRefusal: CLOUD_TEAM ? (bot, email) => relayedSendRefusal(bot, email, Boolean(email && teamOwners.people?.list().some((one) => one.email === email && one.role !== "member"))) : undefined,
   noAiRefusal: noAiNotice.refusal, cardAnswerRefusal, commandRememberRefusal, requestBehavior, requestedTaskBot, botForThread, threadBusy,
   botAtThreadCapacity, parksBehindCoordination, activeGroupTurnForBot, runningTurnInstance, engineSteersImages, resolveReplyTarget,
   turnSelection, policyModelRefusal, clearUnattended, drainQueuedSends, answeringCardAs, resolveAndSendTrust, resolveAndSendTeamSetup, resolveAndSendMcp,
@@ -12241,6 +12250,7 @@ ROUTES.push(createChannelRoutes({
   resolveReplyTarget,
   runningTurnInstance,
   startGroupTurn, engineSteersImages,
+  noteMemberSpend,
   applyRoomHoldsFromMessage,
   cancelGroupTurnOperations,
   drainQueuedChannelSends,

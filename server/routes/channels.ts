@@ -84,6 +84,9 @@ export interface ChannelRouteDeps {
   personMarkRoom?(auth: RequestAuth, room: GroupRecord, unread: boolean, threadId?: string): WireGroup | null;
   /** A room as this person has read it (a Team Cloud); the room itself anywhere else. */
   groupFor?(auth: RequestAuth, group: WireGroup): WireGroup;
+  /** Notes that a member (a client scope with an address) sent a room line on a shared self-hosted server, where such
+   * chats spend model budget with no approval gate yet: the log is the v1 gate's stopgap visibility. */
+  noteMemberSpend?(auth: RequestAuth, room: string): void;
   pageSize(raw: string | null): number | null | undefined;
   messagePage(threadId: string, limit: number | undefined): MessagePage;
   resolveReplyTarget(threadId: string, value: unknown): Message | undefined;
@@ -379,6 +382,7 @@ export function createChannelRoutes(deps: ChannelRouteDeps): RouteHandler {
       if (mentions === null) return json(res, 400, { error: "mentions must be a list of up to 20 bot ids" });
       const threadId = body.threadId ?? group.threadId;
       const trigger = usageTriggerFor(auth);
+      deps.noteMemberSpend?.(auth, `the room "${group.name}"`);
       try {
         assertWithinBudget(cfg, DATA_DIR);
       } catch (error) {
