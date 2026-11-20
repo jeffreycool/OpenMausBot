@@ -9,6 +9,9 @@ describe("the line after Set me up", () => {
     );
     expect(setupRequestLine("es-MX")).toMatch(/^Genial\. Cuéntame/);
     expect(setupRequestLine("pt-BR")).toMatch(/^Ótimo\. Me conte/);
+    expect(setupRequestLine("zh-CN")).toMatch(/^好的。用你自己的话告诉我/);
+    expect(setupRequestLine("zh")).toMatch(/^好的。用你自己的话告诉我/);
+    expect(setupRequestLine("zh-TW")).toMatch(/^好的。用你自己的話告訴我/);
     expect(setupRequestLine("fr")).toBe(setupRequestLine("en"));
     expect(setupRequestLine(undefined)).toBe(setupRequestLine("en"));
   });
@@ -23,6 +26,8 @@ describe("a new bot's greeting", () => {
     expect(initialGreeting("Scout", "en", "Milind Soni")).toBe("Hi Milind, I'm Scout. What would you like me to do?");
     expect(initialGreeting("Scout", "es-MX", "  Ana  María ")).toBe("Hola Ana, soy Scout. ¿Qué te gustaría que hiciera?");
     expect(initialGreeting("Scout", "pt-BR", "João")).toBe("Oi João, eu sou Scout. O que você gostaria que eu fizesse?");
+    expect(initialGreeting("Scout", "zh-CN", "王小明")).toBe("嗨 王小明，我是 Scout。你想让我帮你做什么？");
+    expect(initialGreeting("Scout", "zh-Hans")).toBe("嗨，我是 Scout。你想让我帮你做什么？");
     expect(initialGreeting("Scout", "zh-TW", "王小明")).toBe("嗨 王小明，我是 Scout。你想要我幫你做什麼？");
     expect(initialGreeting("Scout", "zh-Hant")).toBe("嗨，我是 Scout。你想要我幫你做什麼？");
   });

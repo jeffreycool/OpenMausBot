@@ -58,7 +58,8 @@ function fixture(options: { newBotComputer?: BotCreateRouteDeps["newBotComputer"
     expect(out).not.toBe(PASS);
     expect(sent).toHaveLength(1);
     expect(sent[0]!.status, JSON.stringify(sent[0]!.body)).toBe(201);
-    return store.bot(sent[0]!.body.bot.id)!;
+    // The response's bot: the created record as the route answered it, its greeting messages included.
+    return sent[0]!.body.bot;
   };
   return { create, asked };
 }
@@ -85,5 +86,26 @@ describe("where a new bot works", () => {
     expect((await fx.create({ name: "Ada", useDefaults: false, settings: { approvalMode: "auto" } })).computer).toBeUndefined();
     expect((await fixture({ newBotComputer: () => undefined }).create({ name: "Bea" })).computer).toBeUndefined();
     expect((await fixture().create({ name: "Cy" })).computer).toBeUndefined();
+  });
+});
+
+describe("the reply language a new bot starts with", () => {
+  const zhLine = "始终使用简体中文回复，除非用户明确使用其他语言。";
+
+  it("a Chinese app seeds its standing instructions with the line, an English one leaves the soul empty", async () => {
+    expect((await fixture({ cfg: { language: "zh-CN" } }).create({ name: "小艾" })).soul).toBe(zhLine);
+    expect((await fixture({ cfg: { language: "en" } }).create({ name: "Ada" })).soul).toBe("");
+    expect((await fixture().create({ name: "Bea" })).soul).toBe("");
+  });
+
+  it("the line lands after the greeting, so a bot with no instructions still offers its setup card", async () => {
+    const made = await fixture({ cfg: { language: "zh-CN" } }).create({ name: "小艾" });
+    expect(made.soul).toBe(zhLine);
+    expect(made.messages[0]).toMatchObject({ setupOffer: true });
+  });
+
+  it("the line yields to a soul the creator gave, and to rules for every bot that already ask for Chinese", async () => {
+    expect((await fixture({ cfg: { language: "zh-CN" } }).create({ name: "Ada", settings: { soul: "Answer bluntly." } })).soul).toBe("Answer bluntly.");
+    expect((await fixture({ cfg: { language: "zh-CN", everyBotRules: "始终用简体中文回复。" } }).create({ name: "Bea" })).soul).toBe("");
   });
 });
