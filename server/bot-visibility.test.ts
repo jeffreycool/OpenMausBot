@@ -8,7 +8,9 @@ import {
   memberBody,
   memberBot,
   memberFramePayload,
+  memberGroup,
   noteSeen,
+  parsePeopleRoster,
   parseVisibility,
   bodyThreadIds,
   pathSubject,
@@ -514,5 +516,47 @@ describe("a Team Cloud's audiences", () => {
   it("a bot's reorder is no bot's route", () => {
     expect(pathSubject("/api/bots/order")).toBeNull();
     expect(pathSubject("/api/bots/order-1/tasks")).toEqual({ kind: "bot", id: "order-1" });
+  });
+});
+
+describe("a room's people roster and explicit audience", () => {
+  it("parses a roster like a visibility list: trimmed, lower-cased, deduplicated, each an address", () => {
+    expect(parsePeopleRoster(undefined)).toEqual({ ok: true });
+    expect(parsePeopleRoster(null)).toEqual({ ok: true });
+    expect(parsePeopleRoster([])).toEqual({ ok: true });
+    expect(parsePeopleRoster([" Ada@Example.test ", "ada@example.test", "grace@example.test"])).toEqual({ ok: true, people: ["ada@example.test", "grace@example.test"] });
+    expect(parsePeopleRoster(["not an address"])).toEqual({ ok: false, error: '"not an address" is not an email address or @domain' });
+    expect(parsePeopleRoster("everyone")).toMatchObject({ ok: false });
+  });
+
+  it("narrows a room only: both the floor and the explicit audience must allow the viewer", () => {
+    const open = bots.map(({ visibility: _v, ...bot }) => bot);
+    const rooms = [{ id: "room-narrow", threadId: "t-room-narrow", memberIds: ["pub"], audience: { people: ["ada@example.test"] } }];
+    const ada = new VisibleSet(open, rooms, ADA);
+    const bob = new VisibleSet(open, rooms, BOB);
+    expect([ada.group("room-narrow"), ada.thread("t-room-narrow")]).toEqual([true, true]);
+    expect([bob.group("room-narrow"), bob.thread("t-room-narrow")]).toEqual([false, false]);
+    expect(ada.everything, "an explicit audience is a restriction").toBe(false);
+  });
+
+  it("ignores an explicit audience wider than the floor, so storage can never widen a room", () => {
+    const open = bots.map(({ visibility: _v, ...bot }) => bot);
+    const rooms = [{ id: "room-old", threadId: "t-room-old", memberIds: ["pub"], audienceFloor: { people: ["ada@example.test"] }, audience: "everyone" }];
+    expect(new VisibleSet(open, rooms, ADA).group("room-old")).toBe(true);
+    expect(new VisibleSet(open, rooms, BOB).group("room-old")).toBe(false);
+  });
+
+  it("an admin's copy of a room keeps its audience; a member's copy never carries it (the roster stays)", () => {
+    const shown = { id: "room-narrow", threadId: "t-room-narrow", memberIds: ["pub"], people: ["ada@example.test"], audienceFloor: { people: ["ada@example.test"] }, audience: { people: ["ada@example.test"] } };
+    const member = memberGroup(shown);
+    expect("audience" in member).toBe(false);
+    expect("audienceFloor" in member).toBe(false);
+    expect(member.people).toEqual(["ada@example.test"]);
+    expect(memberGroup({ id: "r", threadId: "t", memberIds: ["pub"] })).toEqual({ id: "r", threadId: "t", memberIds: ["pub"] });
+    const ada = new VisibleSet(bots.map(({ visibility: _v, ...bot }) => bot), [shown], ADA);
+    const frame = frameForMember({ kind: "group", group: shown }, { visible: ada, webhook: () => undefined, freshBot: () => undefined, freshGroup: () => undefined }, { bots: new Set(), groups: new Set(["room-narrow"]) });
+    expect(frame).toBeTruthy();
+    expect("audience" in (frame as { group: object }).group).toBe(false);
+    expect("people" in (frame as { group: object }).group).toBe(true);
   });
 });

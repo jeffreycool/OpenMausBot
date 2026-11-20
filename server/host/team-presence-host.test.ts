@@ -150,3 +150,78 @@ describe("the presence host", () => {
     expect(broadcasts).toHaveLength(1);
   });
 });
+
+describe("on a self-hosted server (roomsOnly)", () => {
+  const CAROL = "carol@acme.test";
+  /** A self-hosted server's directory roster, as people-directory.ts's `roster` is shaped. */
+  const roster = {
+    list: () => [{ email: ADA, role: "member" as const }, { email: BEN, role: "admin" as const }, { email: CAROL, role: "member" as const }],
+    onChange: () => () => {},
+  };
+  /** A room everyone may see, a bot's shared chat, and a room Carol's copy of the bot's visibility hides. */
+  function ossSetup() {
+    const audiences: Record<string, Audience> = { room: "room:g1", shared: "team", "quiet-room": "room:g2" };
+    const threadBots: Record<string, string> = { shared: "scout" };
+    const groups: Record<string, { memberIds: string[] }> = { room: { memberIds: ["scout"] }, "quiet-room": { memberIds: ["scout"] } };
+    const bots: Record<string, object> = { scout: {} };
+    const sent: Array<{ to: string; frame: Record<string, unknown> }> = [];
+    const plain = (email: string, extra: Partial<SessionRecord> = {}): SessionRecord =>
+      ({ id: `s-${email}`, tokenHash: "x".repeat(64), label: "", scopes: email === BEN ? ["admin", "client"] : ["client"], createdAt: 0, lastSeenAt: 0, expiresAt: Infinity, email, ...extra });
+    const stream = (name: string, person?: SessionRecord): PresenceStream & { name: string } => ({ name, person, backpressured: false, close: () => {},
+      res: { writableLength: 0, once: () => {}, write: (frame: string) => { sent.push({ to: name, frame: JSON.parse(frame.replace(/^data: /, "")) as Record<string, unknown> }); return true; } } });
+    const streams = [stream(ADA, plain(ADA)), stream(BEN, plain(BEN)), stream(CAROL, plain(CAROL))];
+    const { clock, advance } = manualClock();
+    const host = createTeamPresenceHost<PresenceStream & { name: string }>({
+      people: roster,
+      broadcast: () => {},
+      audienceOf: (threadId) => audiences[threadId] ?? "team",
+      store: () => ({ botByThread: (threadId: string) => (threadBots[threadId] ? (bots[threadBots[threadId]!] as never) : null), groupByThread: (threadId: string) => groups[threadId as keyof typeof groups] as never, bot: (id: string) => (bots[id] as never) ?? null }),
+      // Ada and Carol see the bot; a room only when its audience lets them (the quiet room names Ben alone).
+      visibleTo: (viewer: Viewer) => ({
+        thread: (threadId: string) => {
+          const group = threadId === "room" || threadId === "quiet-room" ? threadId : null;
+          if (group === "quiet-room" && viewer.email !== BEN) return false;
+          return true;
+        },
+      }),
+      roomsOnly: true,
+      clock,
+    });
+    const post = async (email: string | null, body: unknown) => {
+      const answers: Array<[number, unknown]> = [];
+      const auth: RequestAuth = email ? { kind: "session", session: plain(email), via: "bearer", scopes: ["client"] } as RequestAuth : { kind: "loopback", scopes: ["admin", "client"] };
+      await host.routes({ req: {} as never, res: {} as never, url: new URL("http://x/api/presence/here"), path: "/api/presence/here", method: "POST", auth,
+        json: ((_res: unknown, status: number, value: unknown) => { answers.push([status, value]); }) as never, readBody: (async () => body) as never });
+      return answers[0];
+    };
+    return { host, streams, sent, post, advance };
+  }
+
+  it("counts a signed-in member's stream and window without any team authority, and answers the route", async () => {
+    const { host, streams, sent, post } = ossSetup();
+    for (const one of streams) host.streams.add(one);
+    const arrivals = sent.filter((one) => one.frame.kind === "team.presence").map((one) => [one.frame.email, one.to]);
+    // Each arrival reaches the streams open by then, every signed-in session counting.
+    expect(arrivals).toEqual([[ADA, ADA], [BEN, ADA], [BEN, BEN], [CAROL, ADA], [CAROL, BEN], [CAROL, CAROL]]);
+    expect(await post(ADA, { tab: "t1", threadId: "room" })).toEqual([200, { ok: true }]);
+    expect(host.of!(ADA)).toEqual({ here: true });
+  });
+
+  it("shows a room's readers only, and never a bot thread's: no frame, not even recorded", async () => {
+    const { host, streams, sent, post, advance } = ossSetup();
+    for (const one of streams) host.streams.add(one);
+    sent.length = 0;
+    // Ada has the room open; Ben has the bot's own chat open, Carol a room she cannot read.
+    expect(await post(ADA, { tab: "t1", threadId: "room" })).toEqual([200, { ok: true }]);
+    expect(await post(BEN, { tab: "t1", threadId: "shared" })).toEqual([200, { ok: true }]);
+    expect(await post(CAROL, { tab: "t1", threadId: "quiet-room" })).toEqual([200, { ok: true }]);
+    advance(1_000);
+    const threadFrames = sent.filter((one) => one.frame.kind === "thread.presence").map((one) => [one.to, one.frame.threadId, one.frame.people]);
+    expect(threadFrames).toEqual([[ADA, "room", [ADA]]]);
+    expect(JSON.stringify(sent)).not.toContain("shared");
+    expect(JSON.stringify(sent)).not.toContain("quiet-room");
+    // The bot thread's window is recorded as showing nothing, so it never reaches any later list either.
+    expect(host.looking(BEN, "shared")).toBe(false);
+    expect(host.looking(ADA, "room")).toBe(true);
+  });
+});

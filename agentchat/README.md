@@ -54,6 +54,31 @@ agentChat integration module for this fork. **Additive-only**: everything agentC
 | `electron/main.mjs` | 新增 import；CREDENTIALS_FILE 后新增 `osCredentialEncryption`（safeStorage 适配器，保留 Linux basic_text 守卫）+ `credentialEncryptionFor(file)` 适配器工厂（按文件 memoize，keyFile 共享）；8 处 safeStorage 调用点改走该工厂：loadSecureCredentials / saveSecureCredentials / saveWorkspaceCredential / cloudAccountStore / accountRing.savedStore / ensureManagedDesktop 三店（company-connection/library/backup-schedule.bin） | credentials.bin、cloud-account.bin、company-connection.bin、company-library.bin、company-backup-schedule.bin 五个加密存储全部经 macOS 本地密钥迁移，钥匙串只在迁移读时访问最后一次 | 改动集中在 CREDENTIALS_FILE 常量块、五个函数/调用点的 encryption 参数替换；merge 按锚点重放（若上游新增 safeStorage 消费点需同样接走） |
 | `electron/company-backup-main.node-test.mjs` | VM fixture sandbox 增一行 synthetic `credentialEncryptionFor` | 该测试以 `section()` 截取 main.mjs 的 ensureManagedDesktop 源码在 VM 里跑且 context 为白名单；main.mjs 改为立即求值 `credentialEncryptionFor(...)` 后段内引用段外标识符会 ReferenceError，补合成实现保持段自包含 | 上游重写该 fixture 时按同样意图补（一行合成适配器）；保留 |
 
+## 原生群聊 A1 server 解门包（agentchat-server-unlock 分支，2026-11-20）
+
+设计来源 `claudedocs/omb-group-chat-design.md`；能力基线 `claudedocs/omb-group-primitives-inventory.md` 差距 #1/#2/#3/#5/#6/#8。全部 additive，缺省=上游行为。
+
+### 上游文件本地改动登记表增补（A1 解门包）
+
+| 文件 | 改动 | 原因 | 上游 merge 时 |
+|------|------|------|--------------|
+| `packages/phone-protocol/src/wire.ts` | `WireGroup` 增 `people?: string[]` 与 `audience?: BotVisibility`；`PersonEntry`/`PeopleDirectoryResponse` | 群聊数据模型（见 commit bc273cf 行） | 纯 additive，保留 |
+| `server/bot-visibility.ts` | 新增导出 `parsePeopleRoster`（roster 校验：ENTRY 正则+500 上限+小写去重，空=无名册）；`VisibilityGroup` 增 `audience?`；`VisibleSet.group()` 增 `viewerSees(viewer, group.audience)` 窄化判（与 audienceFloor 同时判）；构造器 `everything` 快路径把 restricted audience 计入；`memberGroup` 剥 `audience`（与 audienceFloor 同待遇，roster 保留）；`frameForMember` group 分支 member 无条件走 memberGroup | audience 只窄不宽（宽于 floor 的存量被读时交集忽略，保棘轮+roomFeeds 不变量）；member 副本不带显式受众 | 锚点：parseVisibility 之后、VisibilityGroup 接口、VisibleSet.group()、memberGroup、frameForMember case "group"；纯 additive，保留 |
+| `server/store.ts` | `createGroup` setup 参增 `people?`/`audience?` 透传（audience=everyone 不落库）；`patchGroup` 白名单增 `"people" \| "audience"`（undefined=清除） | 建房带名册/受众 + PATCH 通道落库 | 两个小锚点，保留 |
+| `server/index.ts` | ① `createChannel`/`updateChannel` 增 `roomRosterPatch`/`roomAudiencePatch` 助手（parsePeopleRoster/parseVisibility 校验，400 抛错；audience=everyone 视为清除）；② import `parsePeopleRoster`/`parseVisibility`/`type BotVisibility`/`createPeopleDirectory`/`createPeopleRoutes`；③ `sharedMembership()` 解门三处：run-owner `shared`（`CLOUD_TEAM!==null \|\| sharedMembership()`）、personRooms `reads`、streamView `person` 携带（`CLOUD_TEAM!==null \|\| auth.session.email`）；④ `notificationListed` reader 参对 OSS email session 生效；⑤ teamPresence 装配：`people: teamOwners.people ?? peopleDirectory.roster` + `roomsOnly: CLOUD_TEAM === null` + presenceHereOf 迟绑定；⑥ ROUTES.push 增 `createPeopleRoutes({ directory: CLOUD_TEAM === null ? peopleDirectory : null })`；⑦ `noteMemberSpend` 函数 + 传入 channel/bot-message 两路由 | A1 解门包主体（run ownership #3 / presence #6 / per-person 已读+通知 #5 #8 / 人目录 API）；index.ts 热文件共 7 处锚点 | merge 按行号旁函数锚重放（createChannel、updateChannel 尾、runOwners 装配、personRooms 装配、streamView、notificationListedFor 调用、teamPresenceHost 装配、teamPresence.routes push） |
+| `server/request-auth.ts` | `CLIENT_ALLOW` 增 `{ GET, /^\/api\/people$/ }` 一条 | 人目录路由对 member session 开放 | 纯 additive 一行，保留 |
+| `server/routes/groups.ts` | POST /api/groups handler 增 admin 检查：body 带 `people`/`audience` 且非 admin scope → 403 | member 建房不得设名册/受众（与 PATCH clientGroupPatchViolation 同口径） | 一段插入，保留 |
+| `server/routes/channels.ts` | deps 增 `noteMemberSpend?`；messages POST 在 trigger 构建后调用 | member 房间发言 spend 可见性日志 | 锚点：groupFor 之后 + trigger 行之后，保留 |
+| `server/routes/bot-messages.ts` | deps 增 `noteMemberSpend?`；直聊 trigger 构建后（onBehalfOf 除外）调用 | member 直聊 spend 可见性日志 | 两个小锚点，保留 |
+| `server/host/team-presence-host.ts` | `teamPerson()` 放宽为任意带 email 的非 move-in session（去 membershipAuthority==="team" 门）；deps `people` 类型放宽为结构化 `PresenceRoster`（list+onChange）；新增 `roomsOnly?` dep：`shared()` 在 roomsOnly 下仅房间（无 per-thread audiences 的 server 绝不发 bot 线程 presence——R2 隐私硬门） | presence 解门（#6）+ 隐私硬门 | 三个函数级锚点，保留 |
+| `server/people-directory.ts`（新增） | 人目录模块：SignInAllowList 具名地址 ∪ 持 email 的 session；role 按 admins/members/session scopes（admin 不降级）；名字 person-names 回退 nameFromEmail；live 计算；`roster` 适配器（presence host 用） | 人目录 API（差距 #1 的 server 面） | fork-only 新文件，保留 |
+| `server/routes/people.ts`（新增） | GET /api/people：仅签到 session（其余 404 客户端降级）；`you` 标记调用者；`here` 标记 presence；directory 为 null（team server）时 404 走 /api/team/people | 人目录路由 | fork-only 新文件，保留 |
+| `server/people-directory.test.ts`（新增） | 名册合并/去重/角色优先级/名字回退/you+here/roster 适配 | 人目录单测 | 保留 |
+| `server/routes/people.test.ts`（新增） | 路由：session 得名册+you；loopback/无目录 404；requiredScope=client | 人目录路由单测 | 保留 |
+| `server/bot-visibility.test.ts` | 增 describe「a room's people roster and explicit audience」4 用例（roster 解析/audience 只窄不宽/宽于 floor 被忽略/member 帧剥 audience 留 roster） | audience 语义单测 | 保留 |
+| `server/host/team-presence-host.test.ts` | 增 describe「on a self-hosted server (roomsOnly)」2 用例（无 team authority 的 email session 计入；房间帧可见 + bot 线程永不记录/下发） | presence 解门+隐私硬门单测 | 保留 |
+| `server/group-server-unlock.e2e.test.ts`（新增） | 自托管双成员 e2e 6 用例：人目录（member 可调+you、未签到 404）；people/audience admin-only+校验+清除；audience 窄化（ADA 看不到 BOB 专属房）+member 副本无 audience 有 roster；presence（房间帧、bot 线程零帧）；run ownership（BOB stop 403 stop_not_yours、BOB 排队、ADA stop 200、排队项独立成 turn）；per-person read line | 解门行为集成回归（member session 视角逐项断言） | 保留 |
+
 ## 客户端打磨（agentchat-polish 分支，2026-11-19）
 
 ### 上游文件本地改动登记表增补（polish）
