@@ -566,10 +566,13 @@ import {
   memberBody, memberBot, memberFramePayload,
   noteSeen,
   notFoundFor,
+  parsePeopleRoster,
+  parseVisibility,
   pathSubject,
   routineForViewer, routineRunVisible, routineVisible,
   sameAudience,
   VisibleSet,
+  type BotVisibility,
   type FrameContext,
   type StreamSeen,
   type Viewer,
@@ -3583,7 +3586,26 @@ function createChannel(value: unknown): GroupRecord {
     if (!responder) throw Object.assign(new Error("invalid setup.defaultResponder"), { status: 400 });
     setup = { bulletin: requested.bulletin, defaultResponder: responder, completed: true };
   }
-  return store.createGroup(name, memberIds, false, section, setup ?? (deciderReady(cfg, "roomRouting") ? { defaultResponder: { kind: "auto" } } : undefined));
+  const rosterPatch = roomRosterPatch(body);
+  const audienceValue = roomAudiencePatch(body);
+  const base = setup ?? (deciderReady(cfg, "roomRouting") ? { defaultResponder: { kind: "auto" } } : undefined);
+  return store.createGroup(name, memberIds, false, section, { ...base, ...(rosterPatch.people ? { people: rosterPatch.people } : {}), ...(audienceValue ? { audience: audienceValue } : {}) });
+}
+
+/** A room-create or room-patch body's `people` roster, validated; `undefined` clears it. */
+function roomRosterPatch(body: Record<string, unknown>): { people?: string[] } {
+  if (body.people === undefined) return {};
+  const parsed = parsePeopleRoster(body.people);
+  if (!parsed.ok) throw Object.assign(new Error(parsed.error), { status: 400 });
+  return { people: parsed.people };
+}
+
+/** A room-create or room-patch body's explicit `audience`, validated; `undefined` clears it. */
+function roomAudiencePatch(body: Record<string, unknown>): BotVisibility | undefined {
+  if (body.audience === undefined) return undefined;
+  const parsed = parseVisibility(body.audience);
+  if (!parsed.ok) throw Object.assign(new Error(parsed.error), { status: 400 });
+  return parsed.visibility === "everyone" ? undefined : parsed.visibility;
 }
 
 function updateChannel(groupId: string, value: unknown): GroupRecord {
@@ -3700,6 +3722,12 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
     if (body.resetAudience !== true) throw Object.assign(new Error("resetAudience must be true"), { status: 400 });
     patch.audienceFloor = undefined;
   }
+  // The people roster and the explicit audience (both admin-only: a client
+  // session without the admin scope is refused upstream, in
+  // clientGroupPatchViolation). `undefined` clears either.
+  Object.assign(patch, roomRosterPatch(body));
+  const explicitAudience = roomAudiencePatch(body);
+  if (body.audience !== undefined) patch.audience = explicitAudience;
   const group = store.patchGroup(groupId, patch);
   if (resetAudience) audienceChanged();
   if (!group) throw Object.assign(new Error("no such room"), { status: 404 });

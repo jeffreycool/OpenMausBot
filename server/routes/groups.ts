@@ -50,6 +50,11 @@ export function createGroupRoutes(deps: GroupRouteDeps): RouteHandler {
     const own = (group: WireGroup) => deps.groupFor?.(auth, group) ?? group;
     if (method === "POST" && path === "/api/groups") {
       const body = await readBody(req);
+      // The people roster and the explicit audience are an admin's to set, as on PATCH.
+      const adminFields = ["people", "audience"].find((key) => body && typeof body === "object" && key in body);
+      if (adminFields && auth.kind === "session" && !auth.scopes.includes("admin")) {
+        return json(res, 403, { error: `forbidden: this session may create a room, not set "${adminFields}" (needs the admin scope)` });
+      }
       const hiddenMember = Array.isArray(body?.memberIds) ? body.memberIds.find((id: unknown) => typeof id === "string" && store.bot(id) && !visible.bot(id)) : undefined;
       if (hiddenMember) return json(res, 400, { error: `unknown channel member: ${String(hiddenMember)}` });
       const group = createChannel(body);

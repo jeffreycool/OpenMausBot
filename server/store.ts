@@ -796,6 +796,11 @@ export class Store {
       bulletin?: string;
       defaultResponder?: GroupDefaultResponder;
       completed?: boolean; id?: string; threadId?: string;
+      /** The room's people roster and explicit audience, already validated and
+       * narrowed by the caller (routes parse them; an audience wider than the
+       * members' visibility is simply ignored at read time). */
+      people?: string[];
+      audience?: WireGroup["audience"];
     },
   ): GroupRecord {
     this.rememberSections([section]);
@@ -820,6 +825,8 @@ export class Store {
       group.tasks = [{ threadId, title: UNTITLED_TASK, createdAt, updatedAt: createdAt }];
       group.setupCompletedAt = setup?.completed ? createdAt : null;
       group.setupSkippedAt = null;
+      if (setup?.people?.length) group.people = setup.people;
+      if (setup?.audience && setup.audience !== "everyone") group.audience = setup.audience;
     }
     saveRegistryFor("groups.json", dm ? "the new chat" : "the new room", () => this.saveGroups([group, ...this.groups]));
     this.groups.unshift(group);
@@ -833,7 +840,7 @@ export class Store {
     );
   }
 
-  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "defaultResponder" | "bulletin" | "description" | "unread" | "lastReadMessageId" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "installedPackage" | "turnTimeoutMinutes" | "turnsPerMember" | "holds" | "heldMessages">>): GroupRecord | null {
+  patchGroup(id: string, patch: Partial<Pick<GroupRecord, "name" | "memberIds" | "defaultResponder" | "bulletin" | "description" | "unread" | "lastReadMessageId" | "busyBotId" | "cwd" | "pinnedMessageId" | "section" | "setupCompletedAt" | "setupSkippedAt" | "audienceFloor" | "people" | "audience" | "installedPackage" | "turnTimeoutMinutes" | "turnsPerMember" | "holds" | "heldMessages">>): GroupRecord | null {
     const group = this.group(id);
     if (!group) return null;
     if (Object.prototype.hasOwnProperty.call(patch, "section")) {

@@ -67,6 +67,26 @@ export function storedVisibility(value: unknown): BotVisibility {
   return parsed.ok ? parsed.visibility : "admins";
 }
 
+/** A room's people roster (`WireGroup.people`), parsed like a visibility list:
+ * entries trimmed, lower-cased, deduplicated, each an email address or
+ * `@domain`, at most MAX_VISIBILITY_PEOPLE of them. An empty roster means no
+ * roster, not a private room: the roster names people, it never gates them. */
+export function parsePeopleRoster(value: unknown): { ok: true; people?: string[] } | { ok: false; error: string } {
+  if (value === undefined || value === null) return { ok: true };
+  const parsed = z.array(z.string().max(320)).max(MAX_VISIBILITY_PEOPLE).safeParse(value);
+  if (!parsed.success) {
+    return { ok: false, error: `people must be a list of at most ${MAX_VISIBILITY_PEOPLE} email addresses` };
+  }
+  const people: string[] = [];
+  for (const raw of parsed.data) {
+    const entry = raw.trim().toLowerCase();
+    if (!entry) continue;
+    if (!ENTRY.test(entry)) return { ok: false, error: `"${raw.slice(0, 80)}" is not an email address or @domain` };
+    if (!people.includes(entry)) people.push(entry);
+  }
+  return { ok: true, people: people.length ? people : undefined };
+}
+
 export function isRestricted(value: unknown): boolean {
   return storedVisibility(value) !== "everyone";
 }
@@ -180,6 +200,8 @@ export interface VisibilityGroup {
   tasks?: ReadonlyArray<{ threadId: string }>;
   /** The narrowest audience the room has had: a bot leaving never widens it, only an admin's explicit reset. */
   audienceFloor?: unknown;
+  /** The room's explicit audience, narrowing only: read together with the floor, never instead of it. */
+  audience?: unknown;
 }
 
 export type ThreadOwner = { bot: string; group?: undefined } | { group: string; bot?: undefined };
@@ -205,7 +227,7 @@ export class VisibleSet {
     this.audiences = audiences ?? null;
     // On a Team Cloud nobody's view is everything, an admin's included: each conversation has its own audience.
     this.everything = this.audiences === null && (viewer.kind === "all" ||
-      (!bots.some((bot) => isRestricted(bot.visibility)) && !groups.some((group) => isRestricted(group.audienceFloor))));
+      (!bots.some((bot) => isRestricted(bot.visibility)) && !groups.some((group) => isRestricted(group.audienceFloor) || isRestricted(group.audience))));
     this.ownerOf = ownerOf ?? ((threadId) => this.indexedOwner(threadId));
     if (this.everything) return;
     for (const bot of bots) this.bots.set(bot.id, bot);
@@ -250,7 +272,10 @@ export class VisibleSet {
     const group = this.groups.get(id);
     if (!group) return false;
     const members = group.memberIds.filter((member) => this.bots.has(member));
-    return members.length > 0 && members.every((member) => this.bot(member)) && viewerSees(this.viewer, group.audienceFloor);
+    // The explicit audience narrows only: a stored value wider than the room's
+    // floor is ignored, because both must allow the viewer.
+    return members.length > 0 && members.every((member) => this.bot(member)) &&
+      viewerSees(this.viewer, group.audienceFloor) && viewerSees(this.viewer, group.audience);
   }
 
   /** A conversation's unread mark and read line as this viewer read it; the task as it is where everyone reads alike. */
@@ -492,10 +517,11 @@ export function memberFramePayload(payload: Record<string, unknown>): Record<str
   return bot && typeof bot === "object" && "vpsAlias" in bot ? { ...payload, bot: withoutServerAlias(bot) } : payload;
 }
 
-/** A room as a member receives it: without its audience floor. */
+/** A room as a member receives it: without its audience floor or its explicit
+ * audience (what a room's audience is, is an admin's business; the roster stays). */
 export function memberGroup<T extends object>(group: T): T {
-  if (!("audienceFloor" in group)) return group;
-  const { audienceFloor: _floor, ...rest } = group as T & { audienceFloor?: unknown };
+  if (!("audienceFloor" in group) && !("audience" in group)) return group;
+  const { audienceFloor: _floor, audience: _audience, ...rest } = group as T & { audienceFloor?: unknown; audience?: unknown };
   return rest as T;
 }
 
@@ -581,7 +607,7 @@ export function frameForMember(payload: Record<string, unknown>, ctx: FrameConte
         const fresh = ctx.freshGroup(id);
         if (fresh) return { ...payload, group: asSent({ ...fresh, ...group }) };
       }
-      return visible.member && "audienceFloor" in group ? { ...payload, group: memberGroup(group) } : payload;
+      return visible.member ? { ...payload, group: memberGroup(group) } : payload;
     }
     case "group.deleted":
       return seen.groups.delete(str(payload.groupId)) ? payload : undefined;
