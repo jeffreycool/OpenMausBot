@@ -102,3 +102,47 @@ agentChat integration module for this fork. **Additive-only**: everything agentC
 3. **en `settings.welcome.subtitle` 过期**：仍含 "providers… phone, and your first bot"，与 `welcome-words.test.ts`（"no phone step, no first-bot step"）精神相悖；现行使用键是 `subtitleShort`，未用的 subtitle 属遗留文案，建议上游删除或改写。
 4. **ChiefIntro 缺跳过**：上游首跑第二屏（创建参谋长）无 Not now；本分支实现可作为上游 UX PR（含 `finish("skipped")` 埋点区分）。
 5. **侧栏行内重命名 affordance**：上游 rename 仅在菜单/双击（RenameTitle 已支持双击并有 tooltip）；hover 铅笔为增强候选。
+
+---
+
+## 原生群聊 UI（Phase 2 前端，agentchat-group-ui 分支，2026-11-20）
+
+多人类 + 多 bot 同房的群视图 UI，按 `claudedocs/omb-group-chat-design.md` §4 实施。**纯 src/ 改动**：不动 server/ 与 shared/wire.ts（并行 server agent 负责解门包），所有跨端数据走「可选字段缺失 = 上游行为」的 seam。
+
+### 与 server 解门包（agentchat-server-unlock 分支）的对接清单（合并时照单对接）
+
+| # | server 契约（server agent 落地） | 本分支 UI 消费点 | 缺省行为（server 未解锁时） |
+|---|---|---|---|
+| S1 | `GET /api/people` → `{ people: PersonEntry[] }`，`PersonEntry = { email, name, role: "admin"\|"member", here?, you? }` | `src/state/people.ts` `loadDirectoryPeople()`（复用 TeamPeople 形状发布） | 404/未签入 → null：侧栏人目录行、presence、@ 人员全部隐藏，零报错 |
+| S2 | `WireGroup.people?: string[]`（房间人名册，email 列表，admin 可 PATCH） | `store.tsx` `Group.people`（同名字段镜像）→ `PeoplePage` 名册、`RoomPanel` People 行、`NewRoomPanel` 初始名册 | 字段缺省 → People 行对非 admin 隐藏；admin 见「还没有人员」空态 |
+| S3 | `PATCH /api/groups/:id` 接受 `people`（admin-only，member 403） | `PeoplePage` 增/删人员走 `dispatch({type:"patchGroup", patch:{people}})`（action 类型白名单已加 `people`） | 旧 server 拒绝 → 既有 saved-state 错误提示，本地乐观态被下一个 group 帧冲回 |
+| S4 | `POST /api/groups` 接受 `people`（建房初始名册） | `store.tsx` `createGroup` body 附带 `people` | 旧 server 校验剥掉该字段 → 名册从空开始，行为不变 |
+| S5 | `WireGroup.peopleReads?: Record<messageId, string[]>`（消息 id → 已读人 email 列表；**字段名与形状以此为准**，server 落地时请对齐） | `store.tsx` `Group.peopleReads` → `src/state/room-reads.ts` `useRoomReadMarks` → `RoomReadMarks`（自己消息下的已读人像） | 字段缺省 → 永不渲染 |
+| S6 | presence 解门（`thread.presence` 对房间发放） | 既有 `useThreadPresence`/`ThreadPresenceFaces`/`SidebarPeople` 一行未改，数据源经 S1 打通即亮 | 无 presence 帧 →什么都不渲染（既有行为） |
+| S7 | run ownership 解门（member 可 stop 自己的排队项） | 无 UI 改动（既有 stop 按钮直接受益） | — |
+
+注意：`[local]` 标签解析仍在 agentChat 桥接 dispatcher（local-first 设计 §5 MVP）；本分支只做**呈现层**——composer 草稿含 `[local]` 时路由提示行显示「在这台电脑上运行」（`RoomRoutingHint.draftRunsLocal`），回执 `executed-on` 标注待 server/桥落地（design C-2）。
+
+### 上游文件本地改动登记表增补（group-ui）
+
+| 文件 | 改动 | 原因 | 上游 merge 时 |
+|------|------|------|--------------|
+| `src/state/people.ts`（新增） | 自托管人目录 loader：GET /api/people → TeamPeople 形状（404/未签入 → null） | 自托管多人基线的目录 seam（design §6 A1-6）；纯新增文件 | fork-only 新文件，保留不上游；上游若做同概念需对齐 PersonEntry 形状 |
+| `src/state/team-people.ts` | `useTeamPeopleLoader` 非 team 分支放宽：session 有 email 时尝试目录一次；`refreshPeople`/`reloadTeamPeople` 按 `directorySource` 选数据源 | SidebarPeople/presence/@人员一行不改即点亮（design §6 A1-6） | 门放宽为 fork 偏离；上游 merge 时保留该分支（additive，team 路径原样） |
+| `src/state/room-reads.ts`（新增） | per-person 已读 seam：`useRoomReadMarks(group, messageId)`（目录名 + nameFromEmail 兜底） | design §4.2 已读标记（数据源 S5） | fork-only，保留 |
+| `src/state/store.tsx` | `Group` 接口 `hasMore` 行尾追加 `people?`/`peopleReads?`（行内 TODO 注释，净零行）；`createGroup` action 类型与 POST body 附 `people`（行尾/行内注释）；`patchGroup` patch 白名单增 `"people"` | 客户端类型 seam（S2/S3/S4）；store.tsx 已在 ratchet 钉死，全部改动打包为净零行 | 纯 additive 字段；上游 merge 保留，若上游给 Group 加同名字段需去重 |
+| `src/components/room-panel/PeoplePage.tsx`（新增） | People 管理面：人名册（目录名/地址兜底名、Admin 徽标、you 标注、here 点）+ admin 增删（目录可选列表）+ bot 名册（dirAccess 只读值 `botFolderLabel`） | design §4.4（dirAccess 群场景只读展示，设置仍在 bot 面板）+ 任务 #3 People 管理面 | fork-only，保留 |
+| `src/components/room-panel/RoomPanel.tsx` | PAGES 增 `people` 页；Card 内 Contact 图标 NavRow（值 = 名册人数；`showPeople` = admin 或已有名册，非 admin 无名册→隐藏行） | People 管理面入口（design「member 无权限项→隐藏而非禁用」） | 一页注册 + 一行 NavRow，保留 |
+| `src/components/RoomRoutingHint.tsx`（新增） | @bot 派活可视化：composer 上方 12px ink-secondary 一行——显式 @ 的响应者（头像+名单）、重名仲裁警示、`[local]` 标签「在这台电脑上运行」；无显式路由不渲染 | 任务 #4 @路由可视化，衔接「谁回复」四选一（复用 `roomRouteForComposer`/`roomAddressees`） | fork-only，保留 |
+| `src/components/Composer.tsx` | `<RoomRoutingHint>` 插在 `<TeamAudienceLabel>` 后（+2 行，994→996，未破 1000 ratchet） | 群 composer 的路由呈现挂点 | 两行插入，保留 |
+| `src/components/RoomReadMarks.tsx`（新增） | 已读人像行（≤5 面 + "+n" 11px、role="img" aria-label "Read by {names}"） | S5 呈现层；数据缺省不渲染 | fork-only，保留 |
+| `src/components/GroupView.tsx` | `RoomTextMessage` 的 ReactionChips 行尾追加 `{user && <RoomReadMarks …>}`（净零行，钉死 1186 不变） | 自己消息下的已读呈现挂点 | 一处行内插入，保留 |
+| `src/components/SidebarNewRoomPanel.tsx` | 新增可选人参与多选（目录 faces，role="checkbox"，含 viewer 自己——建房可把自己放进房）；`create` 附 `people` | design §4.1 增强 3（「建房可选项」许可范围内）；数据源 S1 | 保留；旧 server 靠 S4 剥字段兜底 |
+| `src/components/Sidebar.tsx` | 群行 icons 密度 title/aria-label 由裸名改为 `room.row.title`（「{name}, {count} members」）——成员数只在无障碍层，不做可见徽标（DESIGN.md §2 禁 count badges） | 任务 #1 侧栏群形态（可见区分 = 既有 RoomMark，未动） | 一行替换，保留 |
+| `src/locales/en.json` / `zh.json` | 新增 16 键：`room.panel.people`、`room.panel.people.intro`、`room.row.title`、`composer.routing.responders/ambiguous/local`、`room.people.humans/empty/role.admin/you/remove/add/addOne/addMany/noneToAdd`、`room.readBy` | 双语文案（zh 术语对齐 `settings.section.people`=人员） | 尾部/分组处追加，冲突小 |
+| `src/locales/source-hashes.json` | zh 增 16 个新键的 en 哈希 | 本地化管线登记 | merge 可整行重算（`generate-locale.mjs --record-hashes`） |
+| 测试（6 文件） | 新增 `people.dom.test.ts`（目录加载/404 降级/未签入/team 仍走 team 端点）、`PeoplePage.dom.test.ts`（9 用例：名册/角色/here/增删/权限态/空态/dirAccess 值）、`RoomRoutingHint.dom.test.ts`（7 用例）、`RoomReadMarks.dom.test.ts`（4 用例）、`SidebarNewRoomPanel.people.test.ts`（3 用例）；`RoomPanel.dom.test.ts` +People 行/页 2 用例 | 每个状态都设计（DESIGN.md §12/§16） | 保留 |
+
+### 已知基线问题（非本分支引入，merge 时留意）
+
+`scripts/testing/file-size-ratchet.test.ts` 在 `agentchat-integration` 基线即为红：`electron/main.mjs`（3139>3135）、`packages/phone-protocol/src/wire.ts`（1010 未登记）、`server/drivers/claude.ts`（2113>2069）、`server/drivers/codex.ts`（1770>1718）、`server/index.ts`（15401>15394）、`src/components/Sidebar.tsx`（1691>1674）、`src/state/store.tsx`（3289>3288）。本分支对这些钉死文件全部净零行（GroupView 1186、store.tsx 3289、Sidebar 1691 不变；Composer 996<1000）。

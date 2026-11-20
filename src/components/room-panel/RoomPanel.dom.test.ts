@@ -232,6 +232,24 @@ describe("Members", () => {
   });
 });
 
+describe("People", () => {
+  it("shows no People row without a roster and without being the admin", () => {
+    render(room());
+    expect($('[data-panel-page="people"]')).toBeNull();
+  });
+
+  it("offers the People page when the room has a roster, and its page names the room's people", async () => {
+    render(room({ people: ["ben@acme.test"] }));
+    const row = $('[data-panel-page="people"]');
+    expect(row).not.toBeNull();
+    expect(rowValue('[data-panel-page="people"]')).toBe("1");
+    click(row);
+    await settle();
+    expect(page()).toBe("people");
+    expect(document.body.textContent).toContain("ben@acme.test");
+  });
+});
+
 describe("Escape", () => {
   it("leaves a page first, then closes the panel and hands focus back to the room's name", async () => {
     render(room());

@@ -191,8 +191,8 @@ export const GroupListItem = memo(function GroupListItem({
           ? cn("gap-2 rounded-[8px] py-2 pr-2 group-hover:pr-9 group-focus-within:pr-9 max-md:pr-9 touch:pr-9 md:h-[54px] md:py-0", !group.dm && hasThreadList ? "pl-6" : "pl-2") : "gap-2 py-1.5 pl-6 pr-9",
         selected && !expanded ? rowSelectedSurface : "hover:bg-raised/50",
       )}
-      title={density === "icons" ? group.name : undefined}
-      aria-label={density === "icons" ? group.name : undefined}
+      title={density === "icons" ? t("room.row.title", { name: group.name, count: members.length }) : undefined}
+      aria-label={density === "icons" ? t("room.row.title", { name: group.name, count: members.length }) : undefined}
     >
       {group.dm ? <StackedMauses members={members} density={railTile ? "comfortable" : density} large={simpleRow || railTile} /> : <RoomMark density={railTile ? "comfortable" : density} large={simpleRow || railTile} />}
       <div className={cn("min-w-0 flex-1", density === "icons" && "hidden")}>
