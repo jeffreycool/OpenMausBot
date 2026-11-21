@@ -77,30 +77,39 @@ async function officialBinary() {
     windowsHide: true,
   });
   if ((await binaryVersion(cachedBinary)) !== expectedVersion) {
-    if (process.env.OMB_CUA_DIAG) {
-      console.error(`[omb-cua-diag] OMB_CUA_DIAG=1: dumping evidence instead of throwing at line 73`);
-      try {
-        const { stdout: sig } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-          `Get-AuthenticodeSignature -FilePath '${cachedBinary.replace(/'/g, "''")}' | Format-List Status,StatusMessage,SignerCertificate | Out-String`], { timeout: 30_000, windowsHide: true });
-        console.error(`[omb-cua-diag] signature: ${sig}`);
-      } catch (e) { console.error(`[omb-cua-diag] signature probe failed: ${e.message}`); }
-      try {
-        const { stdout: mp } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-          `Get-MpComputerStatus | Select-Object AMServiceEnabled,RealTimeProtectionEnabled,BehaviorMonitorEnabled,IoavProtectionEnabled | Out-String`], { timeout: 30_000, windowsHide: true });
-        console.error(`[omb-cua-diag] defender: ${mp}`);
-      } catch (e) { console.error(`[omb-cua-diag] defender probe failed: ${e.message}`); }
-      try {
-        const { stdout: det } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-          `Get-MpThreatDetection | Select-Object -First 3 InitialDetectionTime,ProcessName,Resources | Out-String`], { timeout: 30_000, windowsHide: true });
-        console.error(`[omb-cua-diag] detections: ${det}`);
-      } catch (e) { console.error(`[omb-cua-diag] detections probe failed: ${e.message}`); }
-      try {
-        const { stdout: zi } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-          `Get-Item -LiteralPath '${cachedBinary.replace(/'/g, "''")}' -Stream * | Select-Object Stream,Length | Out-String`], { timeout: 30_000, windowsHide: true });
-        console.error(`[omb-cua-diag] streams: ${zi}`);
-      } catch (e) { console.error(`[omb-cua-diag] streams probe failed: ${e.message}`); }
+    // Windows Defender real-time scanning has quarantined staged driver exes on
+    // GitHub's windows-latest image (runner-images #15272 shows the same class
+    // of false positive). Expand-Archive succeeds, then the exe is gone. Add
+    // the cache to Defender's exclusion list and extract once more before
+    // declaring the download broken.
+    await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      `Add-MpPreference -ExclusionPath '${cache.replace(/'/g, "''")}' -ErrorAction SilentlyContinue; Out-Null`], {
+      timeout: 30_000,
+      windowsHide: true,
+    }).catch(() => {});
+    await rm(cachedBinary, { force: true }).catch(() => {});
+    await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      "Expand-Archive -LiteralPath $env:OMB_CUA_ARCHIVE -DestinationPath $env:OMB_CUA_EXTRACT -Force"], {
+      env: { ...process.env, OMB_CUA_ARCHIVE: archive, OMB_CUA_EXTRACT: cache },
+      timeout: 60_000,
+      windowsHide: true,
+    });
+    if ((await binaryVersion(cachedBinary)) !== expectedVersion) {
+      if (process.env.OMB_CUA_DIAG) {
+        try {
+          const { stdout: dir } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+            `Get-ChildItem -LiteralPath '${cache.replace(/'/g, "''")}' | Select-Object Name,Length | Out-String`], { timeout: 30_000, windowsHide: true });
+          console.error(`[omb-cua-diag] cache dir after retry: ${dir}`);
+        } catch (e) { console.error(`[omb-cua-diag] dir probe failed: ${e.message}`); }
+        try {
+          const { stdout: det } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+            `Get-MpThreatDetection | Select-Object -First 5 InitialDetectionTime,ProcessName,Resources,CleaningActionID | Out-String`], { timeout: 30_000, windowsHide: true });
+          console.error(`[omb-cua-diag] detections: ${det}`);
+        } catch (e) { console.error(`[omb-cua-diag] detections probe failed: ${e.message}`); }
+      }
+      throw new Error(`downloaded CUA Driver does not report version ${expectedVersion}`);
     }
-    throw new Error(`downloaded CUA Driver does not report version ${expectedVersion}`);
+    console.log(`Recovered CUA Driver ${release.version} after a Windows Defender exclusion retry`);
   }
   return cachedBinary;
 }
