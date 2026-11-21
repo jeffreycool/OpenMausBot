@@ -37,14 +37,7 @@ async function binaryVersion(candidate) {
   try {
     const { stdout } = await run(candidate, ["--version"], { timeout: 5000, windowsHide: true });
     return stdout.match(/cua-driver\s+([\d.]+)/)?.[1] ?? null;
-  } catch (error) {
-    if (process.env.OMB_CUA_DIAG) {
-      console.error(`[omb-cua-diag] exec ${candidate} --version failed:`);
-      console.error(`[omb-cua-diag] code=${error.code} signal=${error.signal} killed=${error.killed}`);
-      console.error(`[omb-cua-diag] message=${String(error.message)}`);
-      if (error.stdout) console.error(`[omb-cua-diag] stdout=${String(error.stdout)}`);
-      if (error.stderr) console.error(`[omb-cua-diag] stderr=${String(error.stderr)}`);
-    }
+  } catch {
     return null;
   }
 }
@@ -70,46 +63,19 @@ async function officialBinary() {
   }
   const archive = join(cache, release.file);
   await writeFile(archive, bytes);
-  await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    "Expand-Archive -LiteralPath $env:OMB_CUA_ARCHIVE -DestinationPath $env:OMB_CUA_EXTRACT"], {
-    env: { ...process.env, OMB_CUA_ARCHIVE: archive, OMB_CUA_EXTRACT: cache },
-    timeout: 60_000,
-    windowsHide: true,
-  });
-  if ((await binaryVersion(cachedBinary)) !== expectedVersion) {
-    // Windows Defender real-time scanning has quarantined staged driver exes on
-    // GitHub's windows-latest image (runner-images #15272 shows the same class
-    // of false positive). Expand-Archive succeeds, then the exe is gone. Add
-    // the cache to Defender's exclusion list and extract once more before
-    // declaring the download broken.
-    await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-      `Add-MpPreference -ExclusionPath '${cache.replace(/'/g, "''")}' -ErrorAction SilentlyContinue; Out-Null`], {
-      timeout: 30_000,
-      windowsHide: true,
-    }).catch(() => {});
-    await rm(cachedBinary, { force: true }).catch(() => {});
-    await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-      "Expand-Archive -LiteralPath $env:OMB_CUA_ARCHIVE -DestinationPath $env:OMB_CUA_EXTRACT -Force"], {
-      env: { ...process.env, OMB_CUA_ARCHIVE: archive, OMB_CUA_EXTRACT: cache },
+  // Expand-Archive is unusable here: on the current windows-latest image,
+  // powershell.exe 5.1 autoloads PowerShell 7's Microsoft.PowerShell.Archive
+  // module (shadowing its own), whose ExtractToDirectory overload is missing
+  // on .NET Framework 4.8 — the extraction dies with a MethodException while
+  // the process still exits 0, leaving zero extracted files. bsdtar (in
+  // System32 since Windows 10 1803) reads zip archives and fails loudly.
+  await run(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe"),
+    ["-xf", archive, "-C", cache], {
       timeout: 60_000,
       windowsHide: true,
     });
-    if ((await binaryVersion(cachedBinary)) !== expectedVersion) {
-      if (process.env.OMB_CUA_DIAG) {
-        try {
-          const { stdout: dir } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-            `Get-ChildItem -LiteralPath '${cache.replace(/'/g, "''")}' | Select-Object Name,Length | Out-String`], { timeout: 30_000, windowsHide: true });
-          console.error(`[omb-cua-diag] cache dir after retry: ${dir}`);
-        } catch (e) { console.error(`[omb-cua-diag] dir probe failed: ${e.message}`); }
-        try {
-          const { stdout: det } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-            `Get-MpThreatDetection | Select-Object -First 5 InitialDetectionTime,ProcessName,Resources,CleaningActionID | Out-String`], { timeout: 30_000, windowsHide: true });
-          console.error(`[omb-cua-diag] detections: ${det}`);
-        } catch (e) { console.error(`[omb-cua-diag] detections probe failed: ${e.message}`); }
-      }
-      throw new Error(`downloaded CUA Driver does not report version ${expectedVersion}`);
-    }
-    console.log(`Recovered CUA Driver ${release.version} after a Windows Defender exclusion retry`);
+  if ((await binaryVersion(cachedBinary)) !== expectedVersion) {
+    throw new Error(`downloaded CUA Driver does not report version ${expectedVersion}`);
   }
   return cachedBinary;
 }
