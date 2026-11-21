@@ -63,12 +63,17 @@ async function officialBinary() {
   }
   const archive = join(cache, release.file);
   await writeFile(archive, bytes);
-  await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    "Expand-Archive -LiteralPath $env:OMB_CUA_ARCHIVE -DestinationPath $env:OMB_CUA_EXTRACT"], {
-    env: { ...process.env, OMB_CUA_ARCHIVE: archive, OMB_CUA_EXTRACT: cache },
-    timeout: 60_000,
-    windowsHide: true,
-  });
+  // Expand-Archive is unusable here: on the current windows-latest image,
+  // powershell.exe 5.1 autoloads PowerShell 7's Microsoft.PowerShell.Archive
+  // module (shadowing its own), whose ExtractToDirectory overload is missing
+  // on .NET Framework 4.8 — the extraction dies with a MethodException while
+  // the process still exits 0, leaving zero extracted files. bsdtar (in
+  // System32 since Windows 10 1803) reads zip archives and fails loudly.
+  await run(join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe"),
+    ["-xf", archive, "-C", cache], {
+      timeout: 60_000,
+      windowsHide: true,
+    });
   if ((await binaryVersion(cachedBinary)) !== expectedVersion) {
     throw new Error(`downloaded CUA Driver does not report version ${expectedVersion}`);
   }
