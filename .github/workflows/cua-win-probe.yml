@@ -1,0 +1,80 @@
+# Minimal repro for the Windows CUA staging failure (agentchat-winfix).
+# Downloads the pinned cua-driver zip with zero repo tooling, extracts it,
+# and reports which files survive and what Defender says. Tag-triggered:
+# the fork runs workflows found on the pushed ref.
+name: CUA Windows probe
+
+on:
+  push:
+    tags:
+      - "cua-probe-*"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe the pinned asset end to end
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $dir = "$env:RUNNER_TEMP\cua-probe"
+          Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          $url = 'https://github.com/trycua/cua/releases/download/cua-driver-rs-v0.45.4/cua-driver-rs-0.45.4-windows-x86_64-binary.zip'
+          Write-Host "=== download to $dir ==="
+          Invoke-WebRequest -Uri $url -OutFile "$dir\cua.zip" -UserAgent 'OpenMausBot-packager'
+          Get-FileHash "$dir\cua.zip" -Algorithm SHA256 | Format-List
+          Write-Host "=== dir right after download ==="
+          Get-ChildItem $dir | Select-Object Name,Length | Format-Table -AutoSize | Out-String
+          Start-Sleep -Seconds 3
+          Write-Host "=== dir after 3s (zip quarantined?) ==="
+          Get-ChildItem $dir -ErrorAction Continue | Select-Object Name,Length | Format-Table -AutoSize | Out-String
+          Write-Host "=== extract ==="
+          Expand-Archive -LiteralPath "$dir\cua.zip" -DestinationPath $dir -Force
+          Write-Host "=== dir right after extract ==="
+          Get-ChildItem $dir | Select-Object Name,Length | Format-Table -AutoSize | Out-String
+          Start-Sleep -Seconds 3
+          Write-Host "=== dir after 3s ==="
+          Get-ChildItem $dir - Select-Object Name,Length | Format-Table -AutoSize | Out-String
+          $exe = Join-Path $dir 'cua-driver.exe'
+          if (Test-Path $exe) {
+            Write-Host "=== exe survives, --version ==="
+            & $exe --version
+            Write-Host "exit=$LASTEXITCODE"
+          } else {
+            Write-Host "=== exe GONE ==="
+          }
+          Write-Host "=== Defender computer status ==="
+          Get-MpComputerStatus | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,BehaviorMonitorEnabled,IoavProtectionEnabled,OnAccessProtectionEnabled,AntispywareEnabled | Format-List | Out-String
+          Write-Host "=== exclusions before ==="
+          Get-MpPreference | Select-Object ExclusionPath,ExclusionExtension,ExclusionProcess | Format-List | Out-String
+          Write-Host "=== try Add-MpPreference exclusion ==="
+          try { Add-MpPreference -ExclusionPath $dir -ErrorAction Stop; Write-Host 'exclusion added' } catch { Write-Host "exclusion FAILED: $($_.Exception.Message)" }
+          Get-MpPreference | Select-Object ExclusionPath | Format-List | Out-String
+          Write-Host "=== threats ==="
+          Get-MpThreat | Select-Object ThreatName,SeverityID,ActiveTime,Resources | Format-List | Out-String
+          Get-MpThreatDetection | Select-Object InitialDetectionTime,ProcessName,Resources,CleaningActionID,ThreatID | Format-List | Out-String
+          Write-Host "=== defender incidents log (last 10) ==="
+          Get-WinEvent -LogName 'Microsoft-Windows-Windows Defender/Operational' -MaxEvents 10 -ErrorAction Continue | Select-Object TimeCreated,Id,LevelDisplayName,Message | Format-List | Out-String
+          Write-Host "=== signature status of the zip and exe (if present) ==="
+          Get-AuthenticodeSignature "$dir\cua.zip" -ErrorAction Continue | Format-List Status,StatusMessage,SignerCertificate | Out-String
+          if (Test-Path $exe) { Get-AuthenticodeSignature $exe | Format-List Status,StatusMessage,SignerCertificate | Out-String }
+          Write-Host "=== retry extract behind exclusion ==="
+          if (Test-Path "$dir\cua.zip") {
+            Expand-Archive -LiteralPath "$dir\cua.zip" -DestinationPath $dir -Force
+            Start-Sleep -Seconds 2
+            Get-ChildItem $dir | Select-Object Name,Length | Format-Table -AutoSize | Out-String
+            if (Test-Path $exe) { & $exe --version; Write-Host "exit=$LASTEXITCODE" } else { Write-Host 'exe still gone after exclusion retry' }
+          } else {
+            Write-Host 'zip itself was removed; re-download behind exclusion'
+            Add-MpPreference -ExclusionPath $dir -ErrorAction SilentlyContinue
+            Invoke-WebRequest -Uri $url -OutFile "$dir\cua.zip" -UserAgent 'OpenMausBot-packager'
+            Expand-Archive -LiteralPath "$dir\cua.zip" -DestinationPath $dir -Force
+            Start-Sleep -Seconds 2
+            Get-ChildItem $dir | Select-Object Name,Length | Format-Table -AutoSize | Out-String
+            if (Test-Path $exe) { & $exe --version; Write-Host "exit=$LASTEXITCODE" } else { Write-Host 'exe still gone after exclusion + re-download' }
+          }
