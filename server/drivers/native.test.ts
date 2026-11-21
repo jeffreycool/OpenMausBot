@@ -3,17 +3,17 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { ensureDirs, NATIVE_DIR } from "../config.ts";
 import type { RuntimeEvent } from "../contracts.ts";
 import { EventBus } from "../harness/bus.ts";
-import { appendNative, discardNativeLog, flushNativeLog, flushNativeLogs, streamedFragment } from "./native.ts";
+import { appendNative, discardNativeLog, drainNativeLog, flushNativeLog, flushNativeLogs, streamedFragment } from "./native.ts";
 
 beforeAll(() => ensureDirs());
 
 describe("appendNative", () => {
-  it("masks the tokens an ACP session/new hands the agent", () => {
+  it("masks the tokens an ACP session/new hands the agent", async () => {
     appendNative("t-native", {
       dir: "out",
       source: "acp",
@@ -32,6 +32,7 @@ describe("appendNative", () => {
         },
       },
     });
+    await drainNativeLog("t-native");
 
     const log = readFileSync(join(NATIVE_DIR, "t-native.ndjson"), "utf8");
     expect(log).not.toContain("box_live_dontlogme");
@@ -40,7 +41,7 @@ describe("appendNative", () => {
     expect(log).toContain("boat-7");
   });
 
-  it("keeps the length of inline screenshots and files, never their bytes", () => {
+  it("keeps the length of inline screenshots and files, never their bytes", async () => {
     const png = "iVBORw0KGgo".padEnd(150_000, "A");
     const pdf = "JVBERi0xLjQ".padEnd(5_000, "B");
     const acp = "R0lGODlh".padEnd(3_000, "C");
@@ -60,6 +61,7 @@ describe("appendNative", () => {
       },
     });
     flushNativeLog("t-inline");
+    await drainNativeLog("t-inline");
     const line = JSON.parse(readFileSync(join(NATIVE_DIR, "t-inline.ndjson"), "utf8").trim());
     const blocks = line.msg.message.content[0].content;
     expect(blocks[0].source).toEqual({ type: "base64", media_type: "image/png", data: "[image data: 150000 base64 chars]" });
@@ -70,7 +72,7 @@ describe("appendNative", () => {
     expect(line.msg.message.content[0].tool_use_id).toBe("shot-1");
   });
 
-  it("still masks secrets in long text that is not an inline payload", () => {
+  it("still masks secrets in long text that is not an inline payload", async () => {
     const key = `sk-ant-${"k".repeat(40)}`;
     appendNative("t-long", {
       dir: "in",
@@ -78,15 +80,17 @@ describe("appendNative", () => {
       msg: { data: `${"log line ".repeat(500)}ANTHROPIC_API_KEY=${key}`, result: { type: "text", data: `${"x".repeat(2_000)} ${key}` } },
     });
     flushNativeLog("t-long");
+    await drainNativeLog("t-long");
     const log = readFileSync(join(NATIVE_DIR, "t-long.ndjson"), "utf8");
     expect(log).not.toContain(key);
     expect(log).toContain("«redacted");
     expect(log).toContain("log line log line");
   });
 
-  it("writes the log private to the user", () => {
+  it("writes the log private to the user", async () => {
     appendNative("t-mode", { dir: "in", source: "acp", msg: { hello: "world" } });
     flushNativeLog("t-mode");
+    await drainNativeLog("t-mode");
     const mode = statSync(join(NATIVE_DIR, "t-mode.ndjson")).mode & 0o777;
     // Windows does not implement POSIX modes; everywhere else, owner-only
     if (process.platform !== "win32") expect(mode).toBe(0o600);
@@ -124,27 +128,25 @@ describe("the native tee", () => {
     expect(streamedFragment("acp", { method: "session/update" })).toBe(false);
   });
 
-  it("holds incoming lines, in order, until a flush or the timer, and writes what it sent at once", () => {
-    vi.useFakeTimers();
-    try {
-      appendNative("t-held", { dir: "in", source: "claude.sdk.message", msg: { type: "system", n: 1 } });
-      appendNative("t-held", { dir: "in", source: "claude.sdk.message", msg: { type: "stream_event", event: { type: "content_block_delta" } } });
-      appendNative("t-held", { dir: "in", source: "claude.sdk.message", msg: { type: "assistant", n: 2 } });
-      expect(rows("t-held")).toEqual([]);
-      appendNative("t-held", { dir: "out", source: "claude.sdk.message", msg: { type: "user", n: 3 } });
-      expect(rows("t-held").map((row) => row.msg.n)).toEqual([1, 2, 3]);
-      appendNative("t-held", { dir: "in", source: "claude.sdk.message", msg: { type: "result", n: 4 } });
-      vi.advanceTimersByTime(300);
-      expect(rows("t-held").map((row) => row.msg.n)).toEqual([1, 2, 3, 4]);
-    } finally {
-      vi.useRealTimers();
-    }
+  it("holds incoming lines, in order, until a flush or the timer, and writes what it sent at once", async () => {
+    appendNative("t-held", { dir: "in", source: "claude.sdk.message", msg: { type: "system", n: 1 } });
+    appendNative("t-held", { dir: "in", source: "claude.sdk.message", msg: { type: "stream_event", event: { type: "content_block_delta" } } });
+    appendNative("t-held", { dir: "in", source: "claude.sdk.message", msg: { type: "assistant", n: 2 } });
+    expect(rows("t-held")).toEqual([]);
+    appendNative("t-held", { dir: "out", source: "claude.sdk.message", msg: { type: "user", n: 3 } });
+    await drainNativeLog("t-held");
+    expect(rows("t-held").map((row) => row.msg.n)).toEqual([1, 2, 3]);
+    appendNative("t-held", { dir: "in", source: "claude.sdk.message", msg: { type: "result", n: 4 } });
+    await new Promise((done) => setTimeout(done, 300));
+    await drainNativeLog("t-held");
+    expect(rows("t-held").map((row) => row.msg.n)).toEqual([1, 2, 3, 4]);
   });
 
-  it("writes a thread's held lines when its turn ends on the bus", () => {
+  it("writes a thread's held lines when its turn ends on the bus", async () => {
     const bus = new EventBus(() => {});
     appendNative("t-turn-end", { dir: "in", source: "claude.sdk.message", msg: { type: "assistant", n: 1 } });
     bus.publish({ eventId: "e1", provider: "claudeAgent", threadId: "t-turn-end", createdAt: new Date().toISOString(), type: "turn.completed", ok: true } as unknown as RuntimeEvent);
+    await drainNativeLog("t-turn-end");
     expect(rows("t-turn-end").map((row) => row.msg.n)).toEqual([1]);
   });
 
@@ -154,6 +156,13 @@ describe("the native tee", () => {
     flushNativeLog("t-deleted");
     flushNativeLogs();
     expect(existsSync(file("t-deleted"))).toBe(false);
+  });
+
+  it("removes a deleted thread's log even when a write was in flight", async () => {
+    appendNative("t-deleting", { dir: "out", source: "claude.sdk.message", msg: { type: "user", n: 1 } });
+    discardNativeLog("t-deleting");  // while the write the out-event queued is still in flight
+    await drainNativeLog("t-deleting");
+    expect(existsSync(file("t-deleting"))).toBe(false);
   });
 
   it("writes every held line when the process exits", () => {

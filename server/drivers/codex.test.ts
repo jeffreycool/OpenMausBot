@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ProviderInstance, RuntimeEvent } from "../contracts.ts";
 import { DATA_DIR, NATIVE_DIR } from "../config.ts";
-import { flushNativeLog } from "./native.ts";
+import { drainNativeLog, flushNativeLog } from "./native.ts";
 import { ChatGptPlanAuthController } from "./chatgpt-plan-auth.ts";
 import { recordEvents, type EventRecorder } from "../testing/events.ts";
 import { publishedMessages, replyProblems } from "../harness/text-items.testkit.ts";
@@ -232,6 +232,7 @@ describe("CodexDriver turns (fake app-server)", () => {
     await recorder.until((event) => event.type === "turn.completed");
     expect(recorder.events.find((event) => event.type === "turn.completed")).toMatchObject({ ok: false, stopReason: "interrupted" });
     flushNativeLog("mcp-stop");
+    await drainNativeLog("mcp-stop");
     const sent = readFileSync(join(NATIVE_DIR, "mcp-stop.ndjson"), "utf8").trim().split("\n").map((line) => JSON.parse(line))
       .filter((entry) => entry.dir === "out").map((entry) => entry.msg?.method);
     expect(sent).toContain("thread/start");
@@ -1171,6 +1172,7 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     expect(JSON.stringify(seen)).not.toContain(attachments);
 
     flushNativeLog("t-native-input-image");
+    await drainNativeLog("t-native-input-image");
     const nativeLog = readFileSync(join(NATIVE_DIR, "t-native-input-image.ndjson"), "utf8");
     expect(nativeLog).toContain('"type":"image"');
     expect(nativeLog).toContain("[inline image omitted");

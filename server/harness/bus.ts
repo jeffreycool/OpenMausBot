@@ -251,7 +251,7 @@ export class EventBus {
     try {
       await this.appendLog(file, lines.join("\n") + "\n", { mode: 0o600 });
       if (warning) this.pendingLogWarnings.delete(threadId);
-      capThreadLog(file, currentThreadLogCap());
+      await capThreadLog(file, currentThreadLogCap());
     } catch (error) {
       this.noteDiskFailure(events[0], error);
     } finally {

@@ -1,6 +1,12 @@
 // Tees every provider-native message beside the canonical stream, so protocol drift shows up in a diff. Lines are held
 // per thread and appended together every FLUSH_MS, when a caller flushes, and at exit.
-import { appendFileSync } from "node:fs";
+// Appends are async (fs/promises), one in flight per thread and the rest queued behind it, so a turn's stream of native
+// records — including the multi-megabyte thread/resume a codex turn opens with — never blocks the server's event loop
+// on disk. Publication order per thread is kept by that chain. `process.exit` cannot await: the exit hook writes what is
+// still held synchronously, accepting that an append already in flight at a hard exit may be lost — the same posture as
+// the canonical event log (server/harness/bus.ts), of which this tee is only the diagnostics copy.
+import { appendFileSync, rmSync } from "node:fs";
+import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { NATIVE_DIR } from "../config.ts";
@@ -15,6 +21,12 @@ const MAX_HELD_CHARS = 256 * 1024;
 const held = new Map<string, string[]>();
 let heldChars = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
+
+/** One append in flight per thread; appends queued behind it keep each thread's file in publication order. */
+const writing = new Map<string, Promise<void>>();
+/** Threads deleted while an append was in flight: the append's file is removed once it lands, so a delete cannot be
+ * undone by a late write (store.ts unlinks the path right after discardNativeLog). */
+const discarded = new Set<string>();
 
 function carriesBase64(record: Record<string, unknown>): boolean {
   return record.type === "base64" || record.type === "image" || imageMedia(record);
@@ -86,14 +98,46 @@ export function appendNative(threadId: string, entry: { dir: "in" | "out"; sourc
   }
 }
 
+/** Queues this thread's held lines to disk; `drainNativeLog` is the write's completion. */
 export function flushNativeLog(threadId: string): void {
   const lines = take(threadId);
   if (!lines) return;
   const file = join(NATIVE_DIR, `${threadId}.ndjson`);
+  const text = lines.join("");
+  const chain = writing.get(threadId) ?? Promise.resolve();
+  const next = chain.then(() => writeNative(file, text, threadId), () => writeNative(file, text, threadId));
+  writing.set(threadId, next);
+  next.finally(() => {
+    if (writing.get(threadId) === next) writing.delete(threadId);
+  }).catch(() => {});
+}
+
+async function writeNative(file: string, text: string, threadId: string): Promise<void> {
   try {
-    appendFileSync(file, lines.join(""), { mode: 0o600 });
-    capThreadLog(file, currentThreadLogCap());
-  } catch {}
+    await appendFile(file, text, { mode: 0o600 });
+    await capThreadLog(file, currentThreadLogCap());
+  } catch {
+  }
+  if (discarded.delete(threadId)) {
+    try {
+      rmSync(file, { force: true });
+    } catch {
+    }
+  }
+}
+
+/** The write this thread's last flush queued, done; a reader of the log waits for this first. */
+export function drainNativeLog(threadId: string): Promise<void> {
+  return writing.get(threadId) ?? Promise.resolve();
+}
+
+/** Every write queued so far, done (and one more pass for lines a timer held back). */
+export async function drainNativeLogs(): Promise<void> {
+  await Promise.all(writing.values());
+  if ([...held.values()].some((lines) => lines.length)) {
+    flushNativeLogs();
+    await Promise.all(writing.values());
+  }
 }
 
 export function flushNativeLogs(): void {
@@ -102,9 +146,11 @@ export function flushNativeLogs(): void {
   for (const threadId of Array.from(held.keys())) flushNativeLog(threadId);
 }
 
-/** A deleted thread's held lines are dropped, so a later flush cannot recreate its log. */
+/** A deleted thread's held lines are dropped, so a later flush cannot recreate its log; a write still in flight for it
+ * removes its file when the write lands (writeNative), so the delete stands. */
 export function discardNativeLog(threadId: string): void {
   take(threadId);
+  if (writing.has(threadId)) discarded.add(threadId);
 }
 
 function take(threadId: string): string[] | undefined {
@@ -115,4 +161,16 @@ function take(threadId: string): string[] | undefined {
   return lines;
 }
 
-process.once("exit", flushNativeLogs);
+process.once("exit", () => {
+  if (timer) clearTimeout(timer);
+  // process.exit cannot await: what is still held is written synchronously (an append already in flight cannot be
+  // waited for and may be lost — the same posture as the canonical event log's own exit). Queuing it through
+  // flushNativeLog would only move it into an async write this exit never waits for.
+  for (const [threadId, lines] of held) {
+    try {
+      appendFileSync(join(NATIVE_DIR, `${threadId}.ndjson`), lines.join(""), { mode: 0o600 });
+    } catch {
+    }
+    held.delete(threadId);
+  }
+});

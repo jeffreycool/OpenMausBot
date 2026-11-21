@@ -5,7 +5,7 @@ import { browserEngineStatus, ensureChrome, installAgentBrowserBinary, resolveAg
 import { DATA_DIR, EVENTS_DIR, NATIVE_DIR, instanceConfigs, type AppConfig } from "../config.ts";
 import { boundRetentionDays, decisionsCsv, readDecisionRange, readDecisions, type DecisionRow } from "../decision-log.ts";
 import { doctorSummary } from "../doctor/start.ts";
-import { flushNativeLog } from "../drivers/native.ts";
+import { drainNativeLog, flushNativeLog } from "../drivers/native.ts";
 import { editionForMembers, editionStatus, entitled } from "../enterprise.ts";
 import { reportableServerVersion } from "../environment.ts";
 import { fleetAvailable, fleetRequest, fleetSocketPath } from "../fleet-client.ts";
@@ -130,6 +130,8 @@ export function createStatusRoutes(deps: StatusRouteDeps): RouteHandler {
       }
       const limit = parsedLimit;
       flushNativeLog(threadId);
+      // The tee appends asynchronously; the read must see what was flushed, so it waits for that write to land.
+      await drainNativeLog(threadId);
       return json(res, 200, readThreadEvents({ eventsDir: EVENTS_DIR, nativeDir: NATIVE_DIR, threadId, limit }));
     }
 

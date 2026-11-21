@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ensureDirs, EVENTS_DIR, NATIVE_DIR } from "./config.ts";
 import type { RuntimeEvent } from "./contracts.ts";
-import { appendNative, flushNativeLog } from "./drivers/native.ts";
+import { appendNative, drainNativeLog, flushNativeLog } from "./drivers/native.ts";
 import { EventBus } from "./harness/bus.ts";
 import { bindThreadLogCapProvider, capThreadLog, currentThreadLogCap } from "./thread-log-rotation.ts";
 import { readThreadEvents } from "./thread-events.ts";
@@ -57,11 +57,11 @@ describe("thread log rotation", () => {
     expect(readFileSync(file, "utf8")).toBe(before);
   });
 
-  it("trims an over-cap log to the newest half on line boundaries", () => {
+  it("trims an over-cap log to the newest half on line boundaries", async () => {
     writeLines(EVENTS_DIR, 80);
     const file = join(EVENTS_DIR, `${THREAD}.ndjson`);
     const original = linesOf(EVENTS_DIR);
-    capThreadLog(file, 2000);
+    await capThreadLog(file, 2000);
     const kept = linesOf(EVENTS_DIR);
     expect(statSync(file).size).toBeLessThanOrEqual(2000);
     expect(kept.length).toBeGreaterThan(0);
@@ -105,11 +105,12 @@ describe("thread log rotation", () => {
     expect(readFileSync(file, "utf8")).not.toContain('"eventId":"ev-0"');
   });
 
-  it("the native tee caps its log after appending", () => {
+  it("the native tee caps its log after appending", async () => {
     bindThreadLogCapProvider(() => 400);
     for (let i = 0; i < 12; i++) {
       appendNative(THREAD, { dir: "in", source: "test", msg: { i } });
       flushNativeLog(THREAD);
+      await drainNativeLog(THREAD);
     }
     const file = join(NATIVE_DIR, `${THREAD}.ndjson`);
     const lines = linesOf(NATIVE_DIR);

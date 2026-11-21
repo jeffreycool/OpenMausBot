@@ -1,12 +1,16 @@
 // Opt-in size cap for per-thread NDJSON logs: keep the newest half, cut on a line boundary, same filename.
+// The trim reads and writes asynchronously (fs/promises): a capped log is hundreds of megabytes, and trimming it
+// synchronously would hold the server's event loop off its work for the whole copy. The one synchronous writer left
+// (native.ts's exit hook) bypasses the cap — at exit, getting the lines out outranks the cap.
 import { closeSync, fstatSync, openSync, readSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
+import { readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 
 /** Where no limit is set, each conversation's event log is still trimmed (to its newest half) past this: one runaway
  * conversation, or hundreds of long ones across many bots, cannot fill the disk. Transcripts are never trimmed. */
 export const DEFAULT_THREAD_EVENT_LOG_MAX_BYTES = 256 * 1024 * 1024;
 
 /** The cap the logs are trimmed to: the person's limit (config's threadEventLogMaxBytes), or the default ceiling. */
-export const threadLogCapOrDefault = (cap: number | null): number => cap ?? DEFAULT_THREAD_EVENT_LOG_MAX_BYTES;
+export const threadLogCapOrDefault = (cap: number | null): number | null => cap ?? DEFAULT_THREAD_EVENT_LOG_MAX_BYTES;
 
 let capProvider: () => number | null = () => null;
 
@@ -22,7 +26,42 @@ export function currentThreadLogCap(): number | null {
   }
 }
 
-export function capThreadLog(file: string, maxBytes: number | null): void {
+export async function capThreadLog(file: string, maxBytes: number | null): Promise<void> {
+  if (typeof maxBytes !== "number" || !Number.isFinite(maxBytes) || maxBytes <= 0) return;
+  let size: number;
+  try {
+    size = (await stat(file)).size;
+  } catch {
+    return;
+  }
+  if (size <= maxBytes) return;
+  await trimToTail(file, Math.max(1, Math.floor(maxBytes / 2)));
+}
+
+async function trimToTail(file: string, keepBytes: number): Promise<void> {
+  const staging = `${file}.trim`;
+  try {
+    const window = Buffer.from(await readFile(file));
+    if (window.length === 0) return;
+    // Keep the newest keepBytes, starting on a record boundary; a window with no newline is one oversized record, so leave it.
+    const start = Math.max(0, window.length - keepBytes);
+    const slice = window.subarray(start);
+    const firstNewline = slice.indexOf(0x0a);
+    if (firstNewline === -1 || firstNewline + 1 >= slice.length) return;
+    const kept = slice.subarray(firstNewline + 1);
+    if (kept.length === 0) return;
+    await writeFile(staging, kept, { mode: 0o600 });
+    await rename(staging, file);
+  } catch {
+    try {
+      await rm(staging, { force: true });
+    } catch {
+    }
+  }
+}
+
+/** The synchronous trim, kept for the places that still write synchronously (native.ts's exit hook). */
+export function capThreadLogSync(file: string, maxBytes: number | null): void {
   if (typeof maxBytes !== "number" || !Number.isFinite(maxBytes) || maxBytes <= 0) return;
   let size: number;
   try {
@@ -31,10 +70,10 @@ export function capThreadLog(file: string, maxBytes: number | null): void {
     return;
   }
   if (size <= maxBytes) return;
-  trimToTail(file, Math.max(1, Math.floor(maxBytes / 2)));
+  trimToTailSync(file, Math.max(1, Math.floor(maxBytes / 2)));
 }
 
-function trimToTail(file: string, keepBytes: number): void {
+function trimToTailSync(file: string, keepBytes: number): void {
   const staging = `${file}.trim`;
   try {
     const source = openSync(file, "r");

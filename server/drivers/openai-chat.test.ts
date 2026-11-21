@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ensureDirs, NATIVE_DIR } from "../config.ts";
-import { discardNativeLog, flushNativeLog } from "./native.ts";
+import { discardNativeLog, drainNativeLog, flushNativeLog } from "./native.ts";
 import type { RuntimeEvent, SendTurnInput } from "../contracts.ts";
 import { GrokDriver } from "./grok.ts";
 import { MinimaxDriver } from "./minimax.ts";
@@ -892,6 +892,7 @@ describe("createOpenAIChatRuntime refused tool calls", () => {
     });
     expect(events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "error" });
     flushNativeLog("thread");
+    await drainNativeLog("thread");
     const refusals = readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line)).filter((entry) => entry.msg?.refused);
     expect(refusals.map((entry) => entry.msg)).toEqual([1, 2, 3].map((attempt) => ({ refused: "tool_use_failed", attempt, error: refusal })));
   });
