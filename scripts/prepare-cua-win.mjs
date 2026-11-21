@@ -37,7 +37,14 @@ async function binaryVersion(candidate) {
   try {
     const { stdout } = await run(candidate, ["--version"], { timeout: 5000, windowsHide: true });
     return stdout.match(/cua-driver\s+([\d.]+)/)?.[1] ?? null;
-  } catch {
+  } catch (error) {
+    if (process.env.OMB_CUA_DIAG) {
+      console.error(`[omb-cua-diag] exec ${candidate} --version failed:`);
+      console.error(`[omb-cua-diag] code=${error.code} signal=${error.signal} killed=${error.killed}`);
+      console.error(`[omb-cua-diag] message=${String(error.message)}`);
+      if (error.stdout) console.error(`[omb-cua-diag] stdout=${String(error.stdout)}`);
+      if (error.stderr) console.error(`[omb-cua-diag] stderr=${String(error.stderr)}`);
+    }
     return null;
   }
 }
@@ -70,6 +77,29 @@ async function officialBinary() {
     windowsHide: true,
   });
   if ((await binaryVersion(cachedBinary)) !== expectedVersion) {
+    if (process.env.OMB_CUA_DIAG) {
+      console.error(`[omb-cua-diag] OMB_CUA_DIAG=1: dumping evidence instead of throwing at line 73`);
+      try {
+        const { stdout: sig } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+          `Get-AuthenticodeSignature -FilePath '${cachedBinary.replace(/'/g, "''")}' | Format-List Status,StatusMessage,SignerCertificate | Out-String`], { timeout: 30_000, windowsHide: true });
+        console.error(`[omb-cua-diag] signature: ${sig}`);
+      } catch (e) { console.error(`[omb-cua-diag] signature probe failed: ${e.message}`); }
+      try {
+        const { stdout: mp } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+          `Get-MpComputerStatus | Select-Object AMServiceEnabled,RealTimeProtectionEnabled,BehaviorMonitorEnabled,IoavProtectionEnabled | Out-String`], { timeout: 30_000, windowsHide: true });
+        console.error(`[omb-cua-diag] defender: ${mp}`);
+      } catch (e) { console.error(`[omb-cua-diag] defender probe failed: ${e.message}`); }
+      try {
+        const { stdout: det } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+          `Get-MpThreatDetection | Select-Object -First 3 InitialDetectionTime,ProcessName,Resources | Out-String`], { timeout: 30_000, windowsHide: true });
+        console.error(`[omb-cua-diag] detections: ${det}`);
+      } catch (e) { console.error(`[omb-cua-diag] detections probe failed: ${e.message}`); }
+      try {
+        const { stdout: zi } = await run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+          `Get-Item -LiteralPath '${cachedBinary.replace(/'/g, "''")}' -Stream * | Select-Object Stream,Length | Out-String`], { timeout: 30_000, windowsHide: true });
+        console.error(`[omb-cua-diag] streams: ${zi}`);
+      } catch (e) { console.error(`[omb-cua-diag] streams probe failed: ${e.message}`); }
+    }
     throw new Error(`downloaded CUA Driver does not report version ${expectedVersion}`);
   }
   return cachedBinary;
