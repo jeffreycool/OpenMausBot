@@ -82,6 +82,11 @@ jobs:
     needs: release
     runs-on: windows-latest
     timeout-minutes: 40
+    env:
+      # Temporary diagnosis (agentchat-winfix): dump exec/signature/Defender
+      # evidence when the pinned CUA driver --version check fails. Remove once
+      # the blocker is identified and fixed.
+      OMB_CUA_DIAG: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
