@@ -1,7 +1,7 @@
 // Packaged: an embedded cua-driver daemon, so macOS TCC grants attribute to OpenMausBot; dev attaches to CuaDriver.app.
 // Agents use the stdio MCP proxy, which executes nothing; the host-owned daemon does.
 
-import { app, ipcMain } from "electron";
+import { app, ipcMain, systemPreferences } from "electron";
 import { execFile } from "node:child_process";
 import { createRequire } from "node:module";
 import { promisify } from "node:util";
@@ -227,12 +227,15 @@ async function loadEmbeddedSdk() {
   return import(pathToFileURL(path.join(process.resourcesPath, "cua-sdk", "cua-sdk.mjs")).href);
 }
 
-async function attachStandalone(signal) {
+async function attachStandalone(signal, { launch: mayLaunch = true } = {}) {
   // Windows must stay on the owned embedded host, never an unrelated daemon.
   if (process.platform !== "darwin") return null;
   const driver = fs.existsSync(INSTALLED_DRIVER) ? INSTALLED_DRIVER : null;
   if (!driver) return null;
   if (!(await socketAlive(STANDALONE_SOCKET))) {
+    // An automatic start adopts a daemon the person already runs; it never launches CuaDriver.app, whose
+    // own TCC identity and prompts belong to an action the person took.
+    if (!mayLaunch) return null;
     signal.throwIfAborted();
     // Through LaunchServices so Accessibility/Screen Recording stay on com.trycua.driver, the identity already granted.
     const launch = execFileAsync("/usr/bin/open", ["-a", "CuaDriver"], {
@@ -266,13 +269,20 @@ function embeddedSocketPath() {
   return preferred.length < 100 ? preferred : `/tmp/cua-omb-${process.pid}.sock`;
 }
 
-async function startEmbedded(binary, signal) {
+async function startEmbedded(binary, signal, { askPermissions = false } = {}) {
   // The packaged app ships no general node_modules, so a bare package import only works in dev.
   const sdk = await loadEmbeddedSdk();
   signal.throwIfAborted();
   // CUA's embedding contract needs grants before the daemon starts, asked from Electron main so macOS attributes them here.
   if (process.platform === "darwin") {
-    const permissionStatus = sdk.requestMacOSPermissions();
+    // Only a person's own action (Retry, turning control on) may make macOS show its permission prompts; an
+    // automatic start reads the grants silently, so a launch never becomes a TCC dialog the person never asked for.
+    const permissionStatus = askPermissions
+      ? sdk.requestMacOSPermissions()
+      : {
+          accessibility: systemPreferences.isTrustedAccessibilityClient(false),
+          screenRecording: systemPreferences.getMediaAccessStatus("screen") === "granted",
+        };
     if (!sdk.hasRequiredMacOSPermissions(permissionStatus)) {
       const missing = [
         !permissionStatus.accessibility && "Accessibility",
@@ -317,7 +327,7 @@ async function startEmbedded(binary, signal) {
   }
 }
 
-export async function startCua({ attempt = 0 } = {}) {
+export async function startCua({ attempt = 0, askPermissions = false } = {}) {
   if (process.platform === "linux") return (await ensureLinuxRuntime()).initialize();
   clearTimeout(retryTimer);
   retryTimer = null;
@@ -339,11 +349,11 @@ export async function startCua({ attempt = 0 } = {}) {
 
   if (wantEmbedded) {
     try {
-      nextConnection = await startEmbedded(binary, signal);
+      nextConnection = await startEmbedded(binary, signal, { askPermissions });
     } catch (err) {
       signal.throwIfAborted();
       try {
-        nextConnection = await attachStandalone(signal);
+        nextConnection = await attachStandalone(signal, { launch: askPermissions });
       } catch (standaloneError) {
         signal.throwIfAborted();
         nextConnection = {
@@ -479,7 +489,7 @@ function restartCua() {
       const generation = lifecycleGeneration;
       await stopping;
       if (generation !== lifecycleGeneration) throw new Error("Computer use restart cancelled");
-      const connection = await startCua();
+      const connection = await startCua({ askPermissions: true });
       const ready = connection?.mode === "embedded" || connection?.mode === "standalone";
       return {
         enabled: ready,

@@ -5,8 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const fixture = vi.hoisted(() => ({ home: "", alive: true, dead: new Set(), hosts: [], failStarts: 0, granted: true }));
-vi.mock("electron", () => ({ app: { isPackaged: false, getPath: () => fixture.home }, ipcMain: { handle: () => {} } }));
+const fixture = vi.hoisted(() => ({ home: "", alive: true, dead: new Set(), hosts: [], failStarts: 0, granted: true, prompts: 0 }));
+vi.mock("electron", () => ({
+  app: { isPackaged: false, getPath: () => fixture.home },
+  ipcMain: { handle: () => {} },
+  systemPreferences: {
+    isTrustedAccessibilityClient: () => fixture.granted,
+    getMediaAccessStatus: () => (fixture.granted ? "granted" : "not-determined"),
+  },
+}));
 vi.mock("@trycua/cua-driver/embedded", () => ({
   EmbeddedCuaDriverHost: class {
     static withOptions() { return new this(); }
@@ -23,7 +30,7 @@ vi.mock("@trycua/cua-driver/embedded", () => ({
   },
 }));
 vi.mock("@trycua/cua-driver/electron", () => ({
-  requestMacOSPermissions: () => ({ accessibility: fixture.granted, screenRecording: fixture.granted }),
+  requestMacOSPermissions: () => { fixture.prompts += 1; return { accessibility: fixture.granted, screenRecording: fixture.granted }; },
   hasRequiredMacOSPermissions: () => fixture.granted,
 }));
 vi.mock("node:fs", async (original) => {
@@ -55,7 +62,7 @@ vi.mock("./cua-restart.mjs", async (original) => {
 
 let cua;
 beforeEach(async () => {
-  Object.assign(fixture, { home: mkdtempSync(join(tmpdir(), "omb-cua-watch-")), alive: true, dead: new Set(), hosts: [], failStarts: 0, granted: true });
+  Object.assign(fixture, { home: mkdtempSync(join(tmpdir(), "omb-cua-watch-")), alive: true, dead: new Set(), hosts: [], failStarts: 0, granted: true, prompts: 0 });
   vi.stubEnv("OPENMAUSBOT_CUA_EMBEDDED", "1");
   vi.stubEnv("CUA_DRIVER_PATH", "/fixture/cua-driver");
   vi.resetModules();
@@ -114,6 +121,7 @@ describe.skipIf(process.platform !== "darwin")("the Mac driver dies after it sta
     await expect.poll(() => fixture.hosts.length).toBe(1);
     await pause(100);
     expect(fixture.hosts).toHaveLength(1);
+    expect(fixture.prompts).toBe(0);
     expect(JSON.parse((await import("node:fs")).readFileSync(join(fixture.home, "cua-connection.json"), "utf8")).mode).toBe("unavailable");
   });
 
