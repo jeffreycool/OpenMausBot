@@ -1,8 +1,9 @@
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import { listConfigBackups, restoreConfigBackup } from "./config-backup.ts";
 import { parseStoredConfig } from "./config.ts";
+import { resolveDataDir } from "./data-dir.ts";
 import { parseJson } from "./schema.ts";
 
 export const CONFIG_USAGE = `openmausbot config backups [--data-dir DIR] [--json]
@@ -18,7 +19,7 @@ restore   put a copy back, by name or "latest"; the file it replaces is kept,
           so the restore can be undone. Stop the server first if it is
           running, so nothing it holds in memory is written over the copy.
 
---data-dir DIR  the OpenMausBot data folder (default ~/.openmausbot)
+--data-dir DIR  the TappoTeamBot data folder (default ~/.tappoteambot)
 --dry-run        say what a restore would do, and change nothing
 --json           print the result as JSON`;
 
@@ -52,7 +53,7 @@ export function parseConfigArgs(argv: string[], env: NodeJS.ProcessEnv = process
   const help = argv.includes("--help") || argv.includes("-h");
   const dryRun = argv.includes("--dry-run");
   const fail = (error: string): ConfigCliError => ({ error, json });
-  let dataDir = env.OMB_DATA_DIR || join(homedir(), ".openmausbot");
+  let dataDir = resolveDataDir({ home: homedir(), env }).dir;
   let name: string | undefined;
   const words = argv.filter((arg) => arg !== "--json" && arg !== "--help" && arg !== "-h" && arg !== "--dry-run");
   const command = words[0];

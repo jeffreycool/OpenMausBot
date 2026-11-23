@@ -51,7 +51,7 @@ describe("the remote access diagnosis", () => {
     expect(diagnoseRemoteAccess({ account: { available: true, status: "signed-out" }, companion: companion() }).headline).toBe("Not signed in.");
     const refused = diagnoseRemoteAccess({ account: signedIn, companion: companion({ relayToken: { state: "waiting", code: "sign_in" }, e2e: { enabled: true, relay: "off", node: null, descriptor: null } }) });
     expect(refused.headline).toBe("This computer's sign-in was not accepted.");
-    expect(refused.next).toEqual(["MausBot asks again on its own within the hour, or as soon as you pair a phone."]);
+    expect(refused.next).toEqual(["TappoTeamBot asks again on its own within the hour, or as soon as you pair a phone."]);
   });
 
   it("maps the account's control-plane codes to plain reasons", () => {
@@ -59,7 +59,7 @@ describe("the remote access diagnosis", () => {
     expect(reason("sign_in")).toBe("Your sign-in expired.");
     expect(reason("busy")).toBe("MausBot is busy right now.");
     expect(reason("limit")).toBe("This account has reached its computer limit.");
-    expect(reason("update")).toBe("This version of MausBot is too old to connect.");
+    expect(reason("update")).toBe("This version of TappoTeamBot is too old to connect.");
     expect(reason("failed")).toBe("Signing in didn't finish.");
   });
 
@@ -73,7 +73,7 @@ describe("the remote access diagnosis", () => {
     expect(silent.next).toHaveLength(2);
     expect(relayFailure({ e2e: { ...off, relayProblem: "unreachable" } }).headline).toBe("This computer can't reach MausBot Relay.");
     expect(relayFailure({ e2e: { ...off, relayProblem: "busy" } }).headline).toBe("MausBot Relay is busy.");
-    expect(relayFailure({ e2e: { ...off, relay: "off", relayProblem: "replaced" } }).headline).toBe("Another copy of MausBot took over this computer's relay connection.");
+    expect(relayFailure({ e2e: { ...off, relay: "off", relayProblem: "replaced" } }).headline).toBe("Another copy of TappoTeamBot took over this computer's relay connection.");
   });
 
   it("reads a relay still connecting, or renewing its access, as not checked rather than failed", () => {
@@ -105,7 +105,7 @@ describe("the remote access diagnosis", () => {
 
   it("reads a build with no control plane as not set up, not as a failure", () => {
     const diagnosis = diagnoseRemoteAccess({ account: { available: false, status: "signed-out", problem: "unconfigured" }, companion: companion({ e2e: { enabled: false, relay: "off", node: null, descriptor: null }, relayToken: { state: "off", code: null } }), accountWanted: true });
-    expect(diagnosis.steps[1]).toMatchObject({ result: "unchecked", reason: "Not set up in this build of MausBot." });
+    expect(diagnosis.steps[1]).toMatchObject({ result: "unchecked", reason: "Not set up in this build of TappoTeamBot." });
     expect(diagnosis.failed).toBe(false);
     expect(remoteAccessDiagnosisText(diagnosis)).toContain("account: unavailable (unconfigured)");
   });
@@ -136,7 +136,7 @@ describe("the remote access diagnosis", () => {
   it("copies the steps, what to try and the facts as one block", () => {
     const diagnosis = diagnoseRemoteAccess({ account: signedIn, companion: companion({ e2e: { enabled: true, relay: "connecting", node: null, relayProblem: "no_answer", descriptor: null } }), setupTimedOut: true, appVersion: "0.1.158" });
     const text = remoteAccessDiagnosisText(diagnosis);
-    expect(text.split("\n")[0]).toBe("MausBot remote access: MausBot Relay didn't answer.");
+    expect(text.split("\n")[0]).toBe("TappoTeamBot remote access: MausBot Relay didn't answer.");
     expect(text).toContain("MausBot Relay: failed · MausBot Relay didn't answer.");
     expect(text).toContain("This computer: ok · The phone link is on.");
     expect(text).toContain("- A VPN or firewall on this computer can block MausBot Relay.");

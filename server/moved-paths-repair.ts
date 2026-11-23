@@ -11,6 +11,8 @@ const DEFINITIONS = ["bots.json", "groups.json", "config.json", "routines.json",
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const MAX_FILE_BYTES = 16 * 1024 ** 2;
 // The folder a desktop keeps its data in by default, <home>\.openmausbot or <home>/.openmausbot, where a path ends.
+// TappoTeamBot fork: data now lives in .tappoteambot, so paths naming the pre-rename .openmausbot folder are
+// "another data folder" and get rewritten to the live one — the rename rides the same repair a Cloud move uses.
 const END = String.raw`(?=[.,;:!?)\]}]*(?:[\s"'\x60<>|]|$)|[\\/])`;
 const WINDOWS_DATA_FOLDER = new RegExp(String.raw`(?<![\w\\/])[A-Za-z]:(?:[\\/][^\\/:*?"<>|\r\n]+?)*?[\\/]\.openmausbot${END}`, "gi");
 const POSIX_DATA_FOLDER = new RegExp(String.raw`(?<![\w.:\\/-])\/(?:[^/\s"'\x60<>|]+\/)*?\.openmausbot${END}`, "g");
@@ -118,6 +120,26 @@ function repair(dataDir: string, id: string): string[] {
   }
   if (edits.length) console.log(`[moved-paths] rewrote the old computer's data folder in ${edits.length} files; the earlier copies are in .backups/path-repair-${id}`);
   return edits.map(([path]) => path);
+}
+
+/** TappoTeamBot fork rename: rewrite data-internal absolute paths that still name the pre-rename
+ * ~/.openmausbot folder, once per data dir (guarded by a marker beside the backups it keeps). Never throws. */
+export function repairRenamedDataDirPaths(dataDir: string): string[] | null {
+  const markerPath = join(dataDir, ".backups", "tappo-rename-paths-repaired");
+  try {
+    if (lstatSync(markerPath).isFile()) return null;
+  } catch {
+    // no marker yet: run the repair
+  }
+  try {
+    const changed = repair(resolve(dataDir), "tappo-rename");
+    mkdirSync(join(dataDir, ".backups"), { recursive: true, mode: 0o700 });
+    writeFileAtomic(markerPath, JSON.stringify({ at: new Date().toISOString() }), { mode: 0o600 });
+    return changed;
+  } catch (error) {
+    console.error(`[moved-paths] the fork-rename repair stopped: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
 }
 
 /** Call on a Cloud home before anything reads app state. Once per move: the files it changed, relative to the data

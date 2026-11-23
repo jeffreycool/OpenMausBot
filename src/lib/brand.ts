@@ -14,9 +14,11 @@ export interface BrandStatus {
   notice?: string;
 }
 
-export const DEFAULT_BRAND: Brand = { name: "OpenMausBot" };
+export const DEFAULT_BRAND: Brand = { name: "TappoTeamBot" };
 /** The product's name wherever a person reads it. OpenMausBot names only the open-source project and its repository. */
-export const PRODUCT_NAME = "MausBot";
+export const PRODUCT_NAME = "TappoTeamBot";
+/** Upstream's own name, for what upstream runs and this fork only uses: its account and Cloud (MausBot Cloud), its phone app and its Relay. */
+export const UPSTREAM_NAME = "MausBot";
 
 let current: BrandStatus = { brand: DEFAULT_BRAND, source: "default", file: "" };
 

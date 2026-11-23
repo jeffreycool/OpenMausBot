@@ -4,7 +4,7 @@ import { addHeldSecretScrubber, HELD_SECRET_MASK } from "../../shared/redact.ts"
 import { checkInvariants } from "./invariants.ts";
 import { PROGRESS_WRITE_MS, RERUN_BURST, RERUN_GAP_MS, RERUN_HELD, RERUN_SUPERSEDED, Runtime, type BeginRequest } from "./runtime.ts";
 import { openRuntimeStore, type RuntimeStore } from "./store.ts";
-import { CUT_TWICE, INTERRUPTED_OUTWARD, loopStop, nextGuard, outwardDetail } from "./tree.ts";
+import { CUT_TWICE, INTERRUPTED_OUTWARD, loopStop, nextGuard, outwardDetail, outwardInterrupted } from "./tree.ts";
 import type { Assignment, Clock, EnqueueRequest, Limits, RunInput, RunResult, TurnRunner } from "./types.ts";
 
 const flush = () => new Promise<void>(resolve => setImmediate(resolve));
@@ -1133,7 +1133,7 @@ describe("Runtime: a root's later executions (every turn a root)", () => {
     expect(store.inbox({ threadId: "chief-chat" })).toEqual([]);
     second.runtime.tick();
     expect(second.runner.runs.map(r => r.a.id)).toEqual(["root-cut"]);
-    expect(second.runner.runs[0]!.input).toMatchObject({ turn: "rerun", resumed: true, restartNote: expect.stringMatching(/^OpenMausBot restarted while your previous turn here was running/) });
+    expect(second.runner.runs[0]!.input).toMatchObject({ turn: "rerun", resumed: true, restartNote: expect.stringMatching(/^TappoTeamBot restarted while your previous turn here was running/) });
     expect(store.get("root-cut")).toMatchObject({ status: "running", executions: 2 });
     second.runtime.close();
 
@@ -1222,12 +1222,12 @@ describe("Runtime: a cut turn that already acted outward (contract §5)", () => 
 describe("tree.ts: the outward wording and the loop guard", () => {
   it("outwardDetail dedupes, trims and clips the labels, names at most four as verb phrases, and keeps the exact prefix and close", () => {
     expect(outwardDetail(["git push", "git push", "  GMAIL_SEND_EMAIL  "]))
-      .toBe("Interrupted by an OpenMausBot restart after it already pushed (git push), sent an email (GMAIL_SEND_EMAIL); not resumed, so nothing is done twice.");
+      .toBe("Interrupted by a TappoTeamBot restart after it already pushed (git push), sent an email (GMAIL_SEND_EMAIL); not resumed, so nothing is done twice.");
     expect(outwardDetail(["git commit", "STRIPE_CREATE_REFUND", "SLACK_SEND_MESSAGE", "TWITTER_CREATION_OF_A_POST", "COMPOSIO_PROXY_EXECUTE", "x"]))
       .toBe(`${INTERRUPTED_OUTWARD} committed (git commit), made a payment (STRIPE_CREATE_REFUND), sent a message (SLACK_SEND_MESSAGE), posted (TWITTER_CREATION_OF_A_POST) and 2 more; not resumed, so nothing is done twice.`);
     expect(outwardDetail(["COMPOSIO_PROXY_EXECUTE"])).toContain("completed an outward action (COMPOSIO_PROXY_EXECUTE)");
     const long = outwardDetail([`git push ${"origin/".repeat(20)}`, "", "   "]);
-    expect(long).toMatch(/^Interrupted by an OpenMausBot restart after it already pushed \(git push [^)]{0,40}\); not resumed, so nothing is done twice\.$/);
+    expect(long).toMatch(/^Interrupted by a TappoTeamBot restart after it already pushed \(git push [^)]{0,40}\); not resumed, so nothing is done twice\.$/);
     expect(long.length).toBeLessThan(200);
     expect(outwardDetail(["a\nb\tc"])).toContain("(a b c)");
   });
@@ -1645,5 +1645,14 @@ describe("Runtime: turns a restart cut start again a few at a time", () => {
     expect(store.get(late.id)).toMatchObject({ status: "failed", outcome: "interrupted", result: RERUN_SUPERSEDED });
     expect(second.runner.runs.filter(r => r.a.id === late.id)).toHaveLength(0);
     expect(store.get(newer.id)?.status).toBe("running");
+  });
+});
+
+describe("an outward action interrupted before the TappoTeamBot rename", () => {
+  it("is still told apart from a turn cut before it reached the world, by the line a restart wrote then", () => {
+    const earlier = { outcome: "interrupted", outcomeDetail: "Interrupted by an OpenMausBot restart after it already sent an email (GMAIL_SEND_EMAIL); not resumed, so nothing is done twice." };
+    const now = { outcome: "interrupted", outcomeDetail: `${INTERRUPTED_OUTWARD} sent an email (GMAIL_SEND_EMAIL); not resumed, so nothing is done twice.` };
+    const cut = { outcome: "interrupted", outcomeDetail: "Turn interrupted before it did anything outward." };
+    expect([earlier, now, cut].map((assignment) => outwardInterrupted(assignment as never))).toEqual([true, true, false]);
   });
 });

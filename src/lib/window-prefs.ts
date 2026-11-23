@@ -7,6 +7,7 @@ import { applyChatWidth, readChatWidth } from "./chat-width";
 import { companionBridge, pageIsThisComputer } from "./companion-bridge";
 import type { CompanionRoute } from "./companion-types";
 import { applyFont, readFont } from "./fonts";
+import { AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES } from "./fork-flags";
 import { readFollowUpDefault, setFollowUpDefault } from "./follow-up";
 import { readAdvancedMode, setAdvancedMode } from "./interface-mode";
 import { finishedNotificationsEnabled, notificationFeedEnabled, notificationSoundsEnabled, setFinishedNotifications, setNotificationFeed, setNotificationSounds } from "./notification-preferences";
@@ -88,9 +89,10 @@ const PREFS: { [I in WindowPrefId]: Pref<I> } = {
     read: async () => { const state = await ogb()?.talkShortcut?.state(); return state?.available ? { enabled: state.enabled, key: state.key } : undefined; },
     write: (change) => ogb()?.talkShortcut?.set(change),
   },
+  // agentchat fork 本地改动：产品更新邮件订阅的答案记到上游 Cloud Admin，本 fork 不出现。读为 undefined（服务端按「此窗口没有」处理），写不落到 bridge。
   "account.productEmails": {
-    read: async () => { const state = await ogb()?.updatesConsent?.state(); return state?.available ? state.status === "opted_in" : undefined; },
-    write: (on) => ogb()?.updatesConsent?.choose({ status: on ? "opted_in" : "withdrawn" }),
+    read: async () => { if (AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES) return undefined; const state = await ogb()?.updatesConsent?.state(); return state?.available ? state.status === "opted_in" : undefined; },
+    write: (on) => { if (!AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES) return ogb()?.updatesConsent?.choose({ status: on ? "opted_in" : "withdrawn" }); },
   },
   "remote.wifi": route("wifi"),
   "remote.relay": route("relay"),

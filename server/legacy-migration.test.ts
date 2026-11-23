@@ -1,4 +1,6 @@
-// Anything touching the new dir before ensureDirs() runs would make the ~/.opengrokbot rename a no-op: this pins the order.
+// A data folder under an earlier name is used where it is, and nothing moves at start (data-dir.ts). This boots the real
+// server on the oldest name and pins that it comes up on that folder, leaves it in place, and writes a fresh environment
+// id inside it.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -6,6 +8,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { DATA_DIR_NAME } from "./data-dir.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { workerPort } from "./testing/worker-port.ts";
 
@@ -59,10 +62,12 @@ afterAll(async () => {
 });
 
 describe("legacy data dir", () => {
-  it("is renamed to the new name on first boot, with its contents and a fresh environment id", () => {
-    const fresh = join(home, ".openmausbot");
-    expect(existsSync(join(home, ".opengrokbot"))).toBe(false);
-    expect(readFileSync(join(fresh, "keep-me.txt"), "utf8")).toBe("carried over");
-    expect(readFileSync(join(fresh, "environment-id"), "utf8").trim()).toMatch(/^[0-9a-f-]{36}$/);
+  it("is used where it is on first boot: nothing is moved, its contents stay, and a fresh environment id is written inside it", () => {
+    const inPlace = join(home, ".opengrokbot");
+    expect(existsSync(inPlace)).toBe(true);
+    expect(existsSync(join(home, ".openmausbot"))).toBe(false);
+    expect(existsSync(join(home, DATA_DIR_NAME))).toBe(false);
+    expect(readFileSync(join(inPlace, "keep-me.txt"), "utf8")).toBe("carried over");
+    expect(readFileSync(join(inPlace, "environment-id"), "utf8").trim()).toMatch(/^[0-9a-f-]{36}$/);
   });
 });

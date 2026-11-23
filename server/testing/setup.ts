@@ -12,7 +12,11 @@ process.env.HOME = home;
 process.env.USERPROFILE = home;
 // A provider that answers 5xx retries with backoff: no test should wait out real seconds.
 process.env.FAKE_OPENAI_COMPAT_RETRY_SCALE ??= "0.001";
-// OMB_DATA_DIR must never escape the throwaway home the suite deletes.
+// An OMB_DATA_DIR inherited from the shell would aim every test at that one folder, the person's own included, so it is
+// dropped here (incident 2026-11-23: a cleanup test deleted ~/.openmausbot for real). It is not pinned in its place: a
+// test that isolates by stubbing HOME and importing the server afresh (package-import, the app settings) needs the data
+// folder to follow HOME, and one folder per file let state leak from test to test. Under vitest the folder still never
+// lands on the real home: server/data-dir.ts dataHome() answers a temporary folder there.
 delete process.env.OMB_DATA_DIR;
 // The model manifest comes from the bundled copy in tests; refreshing it would be a network call in every server boot.
 process.env.OMB_DISABLE_MODEL_MANIFEST_FETCH = "1";

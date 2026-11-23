@@ -138,7 +138,7 @@ beforeAll(async () => {
   expect((await team.as(ada, "PUT", `/api/bots/${payroll.id}/access`, { everyone: "view", people: {} })).status).toBe(200);
   notes = await create(priya, { name: "Notes" });
   priyaOwn = (await bots(priya)).find((bot) => bot.defaultBot?.person === PRIYA.email)!;
-  expect(priyaOwn, "every member has a MausBot of their own").toBeTruthy();
+  expect(priyaOwn, "every member has a TappoTeamBot of their own").toBeTruthy();
 }, hostTimeout(180_000));
 
 afterEach(async () => {
@@ -329,7 +329,7 @@ it("a channel's conversation never reads the member's private notes or About you
   }
 }, hostTimeout(180_000));
 
-it("an approval is reported as waiting, sits in the member's inbox and conversation, and is answered only in MausBot", async () => {
+it("an approval is reported as waiting, sits in the member's inbox and conversation, and is answered only in TappoTeamBot", async () => {
   await until(idle);
   writeFileSync(file("hang-mode"), "");
   rmSync(file("release"), { force: true });

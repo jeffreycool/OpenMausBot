@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { productName } from "@/lib/brand";
+import { productName, UPSTREAM_NAME } from "@/lib/brand";
 import { desktopAppVersion } from "@/lib/app-links";
 import { versionLine, type SettingsPlace } from "./settings-context";
 import type { SettingsContext, SettingsPage } from "./settings-index";
@@ -42,7 +42,7 @@ export function ScopeLine({ page, ctx, place }: { page: SettingsPage; ctx: Setti
   const badge = page.owner === "place" ? <PlaceBadge place={place} size={14} /> : page.owner === "account" ? <YouAvatar size={14} /> : <AppIcon size={14} />;
   const text = page.owner === "place" ? forPlace(place.name)
     : page.owner === "account"
-      ? ctx.desktop ? <><span className="text-ink">{t("settings.scope.account", { app: productName() })}</span>{everyPlace(ctx)}</> : <span className="text-ink-secondary">{t("settings.scope.browserAccount", { place: place.name })}</span>
+      ? ctx.desktop ? <><span className="text-ink">{t("settings.scope.account", { app: UPSTREAM_NAME })}</span>{everyPlace(ctx)}</> : <span className="text-ink-secondary">{t("settings.scope.browserAccount", { place: place.name })}</span>
       // This app's settings are still kept per place's page until they follow the device (S1), so its line makes no
       // "same on every place" promise yet; Your account's does, because the account is one.
       : ctx.desktop ? <span className="text-ink">{t("settings.scope.app", { app: productName() })}</span> : <span className="text-ink-secondary">{t("settings.scope.browser")}</span>;

@@ -28,7 +28,7 @@ import { LearnMore, SettingRow, SettingsFoldRow, SettingsGroup, SettingsLinkRow,
 import { Layer } from "./Layer";
 import { DialogTitle } from "./settings/SettingsDialog";
 export { DialogTitle };
-import { productName } from "../lib/brand";
+import { productName, UPSTREAM_NAME } from "../lib/brand";
 import { useStore } from "@/state/store";
 
 export {
@@ -99,7 +99,7 @@ export function RouteNotices({ c, notices }: { c: PhoneSetupController; notices:
     <div className="flex flex-col gap-2" data-route-notices="">
       {notices.map((route) => (
         <div key={route} role="status" data-route-notice={route} className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-inset px-3 py-2.5 text-[13px] text-ink">
-          <span className="min-w-0">{t(NOTICE_KEY[route])}</span>
+          <span className="min-w-0">{t(NOTICE_KEY[route], { app: UPSTREAM_NAME })}</span>
           <span className="flex shrink-0 gap-2">
             <button type="button" disabled={c.busy} className="rounded-lg border border-hairline/40 px-2.5 py-1 text-[12px] hover:bg-control disabled:opacity-40"
               onClick={() => void c.act((companion) => (route === "tailscale" ? setCompanionTailscale(companion, false) : companion.setRoute?.(route, false) ?? companion.state()))}>
@@ -204,18 +204,18 @@ function RouteRow({ c, state, route, blocked, onSignIn }: { c: PhoneSetupControl
   const needsSignIn = route === "relay" && c.account?.available !== false && c.account?.status !== "ready";
   if (needsSignIn && !current?.on && !blocked) {
     return (
-      <SettingRow title={t(ROUTE_TEXT[route].name, { app: productName() })} subtitle={t(ROUTE_LINE[route])} inertText={t("phone.pair.needsSignInLine", { app: productName() })}
-        inert={<>{t("phone.pair.needsSignInLine", { app: productName() })}{onSignIn && <>{" "}<button type="button" className="pointer-events-auto cursor-pointer text-accent-text hover:underline" data-relay-sign-in="" onClick={onSignIn}>{t("phone.pair.signIn")}</button></>}</>}>
-        <span data-route-row={route} className="contents"><Switch checked={false} aria-label={t(ROUTE_TEXT[route].name, { app: productName() })} tabIndex={-1} /></span>
+      <SettingRow title={t(ROUTE_TEXT[route].name, { app: UPSTREAM_NAME })} subtitle={t(ROUTE_LINE[route])} inertText={t("phone.pair.needsSignInLine", { app: UPSTREAM_NAME })}
+        inert={<>{t("phone.pair.needsSignInLine", { app: UPSTREAM_NAME })}{onSignIn && <>{" "}<button type="button" className="pointer-events-auto cursor-pointer text-accent-text hover:underline" data-relay-sign-in="" onClick={onSignIn}>{t("phone.pair.signIn")}</button></>}</>}>
+        <span data-route-row={route} className="contents"><Switch checked={false} aria-label={t(ROUTE_TEXT[route].name, { app: UPSTREAM_NAME })} tabIndex={-1} /></span>
       </SettingRow>
     );
   }
   const inert = Boolean(blocked) && !current?.on;
   return (
-    <SettingRow title={t(ROUTE_TEXT[route].name, { app: productName() })} subtitle={t(ROUTE_LINE[route])}
+    <SettingRow title={t(ROUTE_TEXT[route].name, { app: UPSTREAM_NAME })} subtitle={t(ROUTE_LINE[route])}
       message={current?.on && state.devices.length === 0 ? routeStateText(current, 0) : inert ? blocked : undefined}>
       <span data-route-row={route} className="contents">
-        <Switch checked={current?.on === true} aria-label={t(ROUTE_TEXT[route].name, { app: productName() })} disabled={c.busy || inert} title={blocked ?? undefined}
+        <Switch checked={current?.on === true} aria-label={t(ROUTE_TEXT[route].name, { app: UPSTREAM_NAME })} disabled={c.busy || inert} title={blocked ?? undefined}
           onClick={() => void c.act((companion) => setRoute(companion, route, !current?.on))} />
       </span>
     </SettingRow>
@@ -245,7 +245,7 @@ function RouteCard({ route, chosen, disabled, onChoose, needs, action, hint }: {
         <input type="radio" name="pair-route" value={route} checked={chosen} disabled={disabled} onChange={onChoose}
           className="mt-0.5 size-4 shrink-0 accent-[var(--color-ink)] disabled:opacity-40" />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className={cn("text-[14px] leading-5", disabled ? "text-ink-secondary" : "text-ink")}>{t(ROUTE_TEXT[route].name, { app: productName() })}</span>
+          <span className={cn("text-[14px] leading-5", disabled ? "text-ink-secondary" : "text-ink")}>{t(ROUTE_TEXT[route].name, { app: UPSTREAM_NAME })}</span>
           {/* One measure for the card's text: the line wraps like the hint under it (no early "pretty" wrap). */}
           <span className="text-[13px] leading-[18px] text-ink-secondary [text-wrap-style:auto]">{keepWhole(t(ROUTE_LINE[route]))}</span>
           {needs && <span className="text-[12px] leading-4 text-ink-secondary">{needs}</span>}
@@ -326,7 +326,7 @@ export function PairDeviceDialog({ c, state, onClose, secureAddress = false, pla
                 hint={localHint ? <span data-local-network-hint="">{t("phone.pair.localNetworkHint", { app: productName() })}</span> : undefined} />
               {relayAvailable && (
                 <RouteCard route="relay" chosen={picked === "relay"} disabled={!signedIn} onChoose={() => setPicked("relay")}
-                  needs={signedIn ? undefined : t("phone.pair.needsSignIn", { app: productName() })}
+                  needs={signedIn ? undefined : t("phone.pair.needsSignIn", { app: UPSTREAM_NAME })}
                   action={!signedIn && (
                     <button type="button" className="ui-button ui-button-md mt-1 rounded-full" data-pair-sign-in=""
                       onClick={() => { setStep("sign-in"); c.start(); }}>{t("phone.pair.signIn")}</button>
@@ -379,8 +379,8 @@ export function reachLine(state: Pick<CompanionState, "routes">): string {
   const ways = [
     on("wifi") && t("devices.reach.wifi"),
     on("tailscale") && t("devices.reach.tailscale"),
-    on("https") && t("devices.reach.https", { app: productName() }),
-    on("relay") && t("devices.reach.relay", { app: productName() }),
+    on("https") && t("devices.reach.https", { app: UPSTREAM_NAME }),
+    on("relay") && t("devices.reach.relay", { app: UPSTREAM_NAME }),
   ].filter((way): way is string => Boolean(way));
   if (ways.length === 0) return t("devices.reach.none");
   return t("devices.reach.line", { ways: new Intl.ListFormat(undefined, { type: "conjunction" }).format(ways) });
@@ -505,10 +505,10 @@ export function PhoneDevicesSection({ profileEmail = "", focusRequest = 0, simpl
                       onClick={() => void c.act((companion) => setCompanionTailscale(companion, !tailscaleOn))} />
                   </span>
                 </SettingRow>
-                {showHttpsAddressRow(state, c.account, companionBridge()) && <SettingRow title={t("devices.route.https")} subtitle={t("devices.route.httpsDetail", { app: productName() })}
+                {showHttpsAddressRow(state, c.account, companionBridge()) && <SettingRow title={t("devices.route.https")} subtitle={t("devices.route.httpsDetail", { app: UPSTREAM_NAME })}
                   message={(httpsOn && hosted) || c.account?.status === "ready" || accountActionError ? <>
                     {httpsOn && hosted ? t("devices.route.httpsOn", { address: endpointHost(hosted.url) }) : null}
-                    {c.account?.status === "ready" && <span className="block">{t("devices.route.httpsAccount", { app: productName() })}</span>}
+                    {c.account?.status === "ready" && <span className="block">{t("devices.route.httpsAccount", { app: UPSTREAM_NAME })}</span>}
                     {accountActionError && <span className="block text-danger">{accountActionError}</span>}
                   </> : undefined}>
                   <span data-route-row="https" className="contents">
@@ -535,7 +535,7 @@ export function PhoneDevicesSection({ profileEmail = "", focusRequest = 0, simpl
  * desktop app never opens a store or a download. The code itself, and "scan this code", appear only in the dialog. */
 export function PairRow({ reason, children }: { reason?: string | null; children: React.ReactNode }) {
   return (
-    <SettingRow title={t("phone.pair.rowTitle")} subtitle={t("phone.pair.rowLine", { app: productName() })} message={reason ?? undefined}>
+    <SettingRow title={t("phone.pair.rowTitle")} subtitle={t("phone.pair.rowLine", { app: UPSTREAM_NAME })} message={reason ?? undefined}>
       {children}
     </SettingRow>
   );

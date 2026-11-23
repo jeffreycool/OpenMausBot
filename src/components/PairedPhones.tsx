@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Smartphone } from "lucide-react";
 
 import { t } from "@/lib/i18n";
+import { UPSTREAM_NAME } from "@/lib/brand";
 import type { CompanionState, PhoneDevice, PhoneSetupController } from "./PhoneSetupFlow";
 import { SIMPLE_CARD, Switch } from "./SettingsPrimitives";
 import { cn } from "@/lib/cn";
@@ -60,7 +61,7 @@ export function PhoneRow({ device, connected, state, c, onRemoved, onPairAgain, 
           {retired && (
             <div className="flex items-start gap-1.5 text-[12px] leading-4 text-warning" data-phone-retired="" title={t("remote.devices.retired")}>
               <span aria-hidden="true" className="mt-[5px] size-1.5 shrink-0 rounded-full bg-warning" />
-              <span>{t("remote.devices.retiredShort")}</span>
+              <span>{t("remote.devices.retiredShort", { app: UPSTREAM_NAME })}</span>
             </div>
           )}
         </div>

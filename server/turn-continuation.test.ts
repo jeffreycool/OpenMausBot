@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { DATA_DIR_NAME, dataHome } from "./data-dir.ts";
 import { classifyContinuable, writeTurnHandoff } from "./turn-continuation.ts";
 
 let temp: string | undefined;
@@ -94,6 +95,28 @@ describe("writeTurnHandoff", () => {
     expect(isAbsolute(path!)).toBe(true);
     expect(dirname(path!)).toBe(join(dir, "handoffs"));
     expect(readFileSync(path!, "utf8")).toContain("# Handoff");
+  });
+
+  it("with OMB_DATA_DIR unset, writes under the data folder the app uses by the one rule, never one under an earlier name", () => {
+    delete process.env.OMB_DATA_DIR;
+    const home = dataHome();
+    const current = join(home, DATA_DIR_NAME), earlier = join(home, ".openmausbot");
+    expect(existsSync(current) || existsSync(earlier)).toBe(false);
+    try {
+      // No folder yet: the current one, and none is made under an earlier name beside it.
+      const path = writeTurnHandoff({ threadId: "default", turnId: "turn", toolCalls: 0, task: "Continue", messages: [] });
+      expect(dirname(path!)).toBe(join(current, "handoffs"));
+      expect(existsSync(earlier)).toBe(false);
+      rmSync(current, { recursive: true, force: true });
+      // Only a folder under an earlier name: that one, where it is.
+      mkdirSync(earlier);
+      const kept = writeTurnHandoff({ threadId: "legacy", turnId: "turn", toolCalls: 0, task: "Continue", messages: [] });
+      expect(dirname(kept!)).toBe(join(earlier, "handoffs"));
+      expect(existsSync(current)).toBe(false);
+    } finally {
+      rmSync(current, { recursive: true, force: true });
+      rmSync(earlier, { recursive: true, force: true });
+    }
   });
 
   it("returns null when the handoff cannot be written", () => {

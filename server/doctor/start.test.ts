@@ -1,9 +1,11 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { DATA_DIR_NAME, dataHome } from "../data-dir.ts";
+import type { VerbContext } from "../headless/context.ts";
 import { dataFolder, NOW, UUID } from "../testing/doctor-folders.ts";
-import { dataDoctorOutcome } from "./command.ts";
+import { dataDoctor, dataDoctorOutcome } from "./command.ts";
 import { runDoctor } from "./run.ts";
 import { DOCTOR_STATE_FILE, doctorAtStart, doctorSummary } from "./start.ts";
 import type { DoctorCheck } from "./types.ts";
@@ -78,6 +80,12 @@ describe("openmausbot doctor --data", () => {
     expect(existsSync(temp)).toBe(true);
     expect(outcome.human).toContain("        openmausbot doctor --data --fix repairs it");
     expect(outcome.result).toMatchObject({ ok: false, counts: { problems: expect.any(Number), fixed: 0 } });
+  });
+
+  it("with neither --data-dir nor OMB_DATA_DIR, checks the data folder the app uses by the one rule, not one under an earlier name", async () => {
+    const outcome = await dataDoctor({ flags: {}, env: {} } as unknown as VerbContext);
+    expect((outcome.result as { dataDir: string }).dataDir).toBe(resolve(join(dataHome(), DATA_DIR_NAME)));
+    expect((outcome.result as { dataDir: string }).dataDir.endsWith(`/${DATA_DIR_NAME}`)).toBe(true);
   });
 
   it("with --fix takes the lease for its run, repairs, and exits 0 when all is fine", () => {

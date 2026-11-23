@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { productName } from "@/lib/brand";
+import { UPSTREAM_NAME } from "@/lib/brand";
 import { t } from "@/lib/i18n";
 import { SettingsDialog } from "./SettingsDialog";
 
@@ -19,7 +19,7 @@ export function SignOutConfirm({ here, cloud, browser = false, onConfirm, onClos
   const line = browser ? t("settings.signOut.browserLine", { place: here })
     : cloud ? t("settings.signOut.keepRunningBoth", { here, cloud }) : t("settings.signOut.keepRunning");
   return (
-    <SettingsDialog title={t(browser ? "settings.signOut.browserTitle" : "settings.signOut.title", { app: productName() })} onClose={onClose}
+    <SettingsDialog title={t(browser ? "settings.signOut.browserTitle" : "settings.signOut.title", { app: UPSTREAM_NAME })} onClose={onClose}
       footer={<>
         <button type="button" className="ui-button ui-button-md rounded-full" data-autofocus="" onClick={onClose}>{t("common.cancel")}</button>
         <button type="button" disabled={busy} data-sign-out-confirm="" className="ui-button ui-button-md rounded-full !bg-danger !text-danger-ink"

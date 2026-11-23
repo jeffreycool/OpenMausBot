@@ -16,18 +16,19 @@ const HARD_CAP = 2000;
 const LISTED_FROM = 1000;
 
 const LINES: Record<string, number> = {
-  "server/index.ts": 15394,
-  "src/state/store.tsx": 3288,
-  "electron/main.mjs": 3135,
-  "server/store.ts": 2265,
-  "src/components/Sidebar.tsx": 1674,
-  "server/drivers/claude.ts": 2069,
+  "server/index.ts": 15450,
+  "src/state/store.tsx": 3289,
+  "electron/main.mjs": 3140,
+  "server/store.ts": 2272,
+  "src/components/Sidebar.tsx": 1691,
+  "server/drivers/claude.ts": 2113,
   "server/drivers/acp/core.ts": 1658,
-  "server/drivers/codex.ts": 1718,
+  "server/drivers/codex.ts": 1770,
+  "packages/phone-protocol/src/wire.ts": 1045, // already this long at the fork's rename base (c7fed03b2); first counted 2026-11-24
   "server/routines.ts": 1553,
   "src/components/ComputerPanel.tsx": 1782,
   "src/components/RoutineCalendarPage.tsx": 1622,
-  "server/config.ts": 1243,
+  "server/config.ts": 1253,
   "src/components/ChatView.tsx": 1275,
   "server/routine-requests.ts": 1468,
   "src/components/GroupView.tsx": 1186,
@@ -43,7 +44,7 @@ const LINES: Record<string, number> = {
   "server/container-computer.ts": 1175,
   "src/components/ModelPicker.tsx": 1039,
   "src/components/PhoneSetupFlow.tsx": 1088,
-  "server/cli.ts": 1053,
+  "server/cli.ts": 1057,
   "src/components/AttachmentPreview.tsx": 1034,
   "server/meetings/meetbot.ts": 1047,
   "electron/data-dir-lease.node-test.mjs": 846, // the data-folder lease's own tests: many platform cases (Windows probes in data-dir-lease-windows.node-test.mjs)

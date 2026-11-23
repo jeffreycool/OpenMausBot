@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseServerInput } from "../../electron/server-address.mjs";
 import { t } from "@/lib/i18n";
+import { UPSTREAM_NAME } from "@/lib/brand";
 import { Laptop, Loader2, Unplug } from "lucide-react";
 import { Select } from "./Select";
 import { Card } from "./SettingsPrimitives";
@@ -184,7 +185,7 @@ export function RemoteComputerSection({ hideWhenUnavailable = false, legacyOnly 
           ) : (
             <>
               <p className="text-[13px] leading-relaxed text-ink-secondary">
-                {t("remote.client.companion.hint")}
+                {t("remote.client.companion.hint", { app: UPSTREAM_NAME })}
               </p>
               <label className="flex flex-col gap-1.5 text-[12px] text-ink-secondary">
                 {t("remote.client.companion.address")}

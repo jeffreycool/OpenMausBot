@@ -38,7 +38,7 @@ test("local entry opens Settings without enrollment or persistence", async () =>
 });
 
 test("consuming a launch action prevents it replaying on a later restart without changing other arguments", () => {
-  const original = ["/Applications/OpenMausBot", "--profile=fixture", "openmausbot://organization?ignored", "openmausbot://install/example"];
+  const original = ["/Applications/TappoTeamBot", "--profile=fixture", "openmausbot://organization?ignored", "openmausbot://install/example"];
   const argv = [...original, "openmausbot://organization", "openmausbot://organization"];
   assert.equal(takeOrganizationDeepLink(argv), true);
   assert.deepEqual(argv, original);
@@ -50,7 +50,7 @@ test("desktop relaunch accepts every platform once, guards its sender, and prese
   const main = readFileSync(new URL("./main.mjs", import.meta.url), "utf8");
   const source = main.slice(main.indexOf('ipcMain.handle("desktop:relaunch"'), main.indexOf("const talk = installTalk("))
     + main.slice(main.indexOf("function requireMainWindowSender("), main.indexOf('ipcMain.handle("desktop-remote:state"'));
-  const argv = ["/fixture/OpenMausBot", "--fixture", "openmausbot://organization", "openmausbot://organization?ignored"];
+  const argv = ["/fixture/TappoTeamBot", "--fixture", "openmausbot://organization", "openmausbot://organization?ignored"];
   takeOrganizationDeepLink(argv);
   const origin = "http://127.0.0.1:48995";
   localOrigin.setLocalOrigin(origin);
@@ -95,11 +95,11 @@ test("the shipped updater adapter explicitly omits only the fixed action and its
   const bundle = readFileSync(new URL("./vendor/electron-updater.cjs", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   assert.ok(bundle.includes(patched));
   const calls = [];
-  const argv = ["/fixture/OpenMausBot", "--fixture", "openmausbot://organization", "openmausbot://organization?ignored"];
+  const argv = ["/fixture/TappoTeamBot", "--fixture", "tappoteambot://organization", "tappoteambot://organization?ignored"];
   runInNewContext(`({ app, ${patched} }).relaunch();`, {
     process: { argv }, app: { relaunch: options => calls.push(options.args) },
   });
-  assert.deepEqual(calls, [["--fixture", "openmausbot://organization?ignored"]]);
+  assert.deepEqual(calls, [["--fixture", "tappoteambot://organization?ignored"]]);
   for (const changed of ["", `${before}\n${before}`, patched]) {
     assert.throws(() => patchOrganizationUpdater(changed), /to patch, found/);
   }

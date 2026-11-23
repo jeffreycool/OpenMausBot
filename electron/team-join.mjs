@@ -3,7 +3,9 @@
 // it for whoever is signed in here. Signed out, it starts this app's own browser sign-in (its device code never leaves main);
 // signed in as someone the team isn't listed for, it says so and offers to sign in with another address. Another app that
 // catches the link learns a team id and can do nothing with it.
-export const TEAM_LINK_PREFIX = "openmausbot://team/";
+export const TEAM_LINK_PREFIX = "tappoteambot://team/";
+// Fork rename compat: links minted before the TappoTeamBot rename keep joining.
+const LEGACY_TEAM_LINK_PREFIX = "openmausbot://team/";
 /** The Admin's team ids. */
 const TEAM_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /** A link opened and waiting on a sign-in finishes it within this long, or is dropped. */
@@ -11,8 +13,10 @@ export const TEAM_JOIN_WAIT_MS = 30 * 60_000;
 
 /** The team a link names, or null for anything but exactly `openmausbot://team/<team id>`. */
 export function teamIdFromLink(value) {
-  if (typeof value !== "string" || !value.startsWith(TEAM_LINK_PREFIX)) return null;
-  const id = value.slice(TEAM_LINK_PREFIX.length);
+  if (typeof value !== "string") return null;
+  const prefix = value.startsWith(TEAM_LINK_PREFIX) ? TEAM_LINK_PREFIX : value.startsWith(LEGACY_TEAM_LINK_PREFIX) ? LEGACY_TEAM_LINK_PREFIX : null;
+  if (!prefix) return null;
+  const id = value.slice(prefix.length);
   return TEAM_ID.test(id) ? id : null;
 }
 

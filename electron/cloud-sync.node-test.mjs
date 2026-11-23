@@ -43,6 +43,9 @@ test("checks a folder before sharing: too broad, private, MausBot's own, or alre
     assert.equal((await s.service.check(join(s.home, cli, "skills"))).refusal, "private");
   }
   assert.equal((await s.service.check(join(s.home, ".openmausbot", "files"))).refusal, "app-data");
+  // A data folder under the current name is as private wherever it sits: keys and settings, never shared.
+  mkdirSync(join(s.home, "elsewhere", ".tappoteambot", "files"), { recursive: true });
+  assert.equal((await s.service.check(join(s.home, "elsewhere", ".tappoteambot"))).refusal, "private");
   assert.equal((await s.service.check(join(s.home, "Documents"))).refusal, "app-data");
   assert.equal((await s.service.check(join(s.home, "nope"))).refusal, "not-a-folder");
   assert.deepEqual(await s.service.check(s.project), { name: "Clients", pcPath: s.project, files: 1, bytes: 9, partial: false, refusal: null });

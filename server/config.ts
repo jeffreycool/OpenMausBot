@@ -1,6 +1,6 @@
 // ~/.openmausbot/config.json, with env vars overriding its credentials.
-import { readFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
-import { dataHome } from "./data-dir.ts";
+import { readFileSync, mkdirSync } from "node:fs";
+import { dataHome, resolveDataDir } from "./data-dir.ts";
 import { signInFromEnv } from "./sign-in-env.ts";
 export { signInFromEnv };
 import { join } from "node:path";
@@ -693,18 +693,27 @@ export function changedInstanceIds(before: Record<string, unknown>, after: Recor
     .filter((id) => !isDeepStrictEqual(before[id], after[id]));
 }
 
-export const DATA_DIR = process.env.OMB_DATA_DIR || join(dataHome(), ".openmausbot");
-const LEGACY_DATA_DIR = join(dataHome(), ".opengrokbot");
+// TappoTeamBot fork rename: the data folder is ~/.tappoteambot, or a pre-rename ~/.openmausbot / ~/.opengrokbot
+// that is still there, used where it is. Nothing moves at start (incident 2026-11-23): a move is the
+// `openmausbot migrate-data` command's alone. The one rule lives in data-dir.ts, shared with the desktop app.
+const resolvedDataDir = resolveDataDir({ home: dataHome(), env: process.env });
+export const DATA_DIR = resolvedDataDir.dir;
+/** DATA_DIR when it is still a pre-rename folder, else null. */
+export const LEGACY_DATA_DIR = resolvedDataDir.legacy;
 export const EVENTS_DIR = join(DATA_DIR, "events");
 export const NATIVE_DIR = join(DATA_DIR, "native");
 
+/** The pre-rename folder this process moved into DATA_DIR by running the migrate-data command, else null. Start-up
+ * never sets it. */
+export let dataDirRenamedFrom: string | null = null;
+
+export { dataHome, migrateDataCommand, unusedEarlierDataDirs } from "./data-dir.ts";
+
+export function noteDataDirRenamed(from: string): void {
+  dataDirRenamedFrom = from;
+}
+
 export function ensureDirs() {
-  if (!existsSync(DATA_DIR) && existsSync(LEGACY_DATA_DIR)) {
-    try {
-      renameSync(LEGACY_DATA_DIR, DATA_DIR);
-    } catch {
-    }
-  }
   for (const dir of [DATA_DIR, EVENTS_DIR, NATIVE_DIR]) mkdirSync(dir, { recursive: true });
   migrateLegacyFeatureFlags(DATA_DIR);
 }

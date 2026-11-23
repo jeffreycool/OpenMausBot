@@ -14,6 +14,15 @@ export interface ImageSlotStatus { provider: ImageProvider; model: string; confi
 
 /** GET /api/config — configured flags only; secrets are never echoed. */
 export interface ConfigStatus {
+  /** For admins: where this server keeps its data. `legacyDataDir` is that same path while the folder is still under an
+   * earlier name (~/.openmausbot), used where it is until `openmausbot migrate-data` moves it; else null. */
+  dataDir?: string;
+  legacyDataDir?: string | null;
+  /** The whole `openmausbot migrate-data` command for this install, as a terminal takes it. */
+  migrateCommand?: string;
+  /** For admins: folders under an earlier name (~/.openmausbot) still beside `dataDir`, which this server does not read.
+   * Empty when there are none. */
+  unusedDataDirs?: string[];
   /** The workspace's banner picture (GET /api/workspace/banner), by a version that changes with it; null without one. */
   workspaceBanner?: import("@/lib/place-banner").BannerSummary | null;
   xai?: SavedKey;

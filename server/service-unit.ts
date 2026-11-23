@@ -1,8 +1,13 @@
 import { homedir, userInfo } from "node:os";
 import { posix } from "node:path";
 
+import { PRODUCT_NAME } from "./brand.ts";
+
 // Unit files describe a Linux or macOS machine: POSIX paths whatever host renders them (Windows CI included).
 const { basename, dirname, join } = posix;
+
+/** The Linux package's executable: its own name, as electron-builder.yml's `executableName` has it. */
+const LINUX_EXECUTABLE = "tappoteambot";
 
 export interface ServiceSpec {
   node: string;
@@ -37,7 +42,7 @@ export function systemdUnit(spec: ServiceSpec): string {
   const lines = [
     "# Written by `openmausbot service install`. Re-run it to change the options.",
     "[Unit]",
-    `Description=OpenMausBot${spec.label ? ` (${spec.label})` : ""}`,
+    `Description=${PRODUCT_NAME}${spec.label ? ` (${spec.label})` : ""}`,
     "After=network-online.target",
     "Wants=network-online.target",
     "",
@@ -151,11 +156,15 @@ export type SentinelServiceSpec = Pick<ServiceSpec, "node" | "script" | "dataDir
 export function shippedSentinelCli(
   platform: NodeJS.Platform, home: string, exists: (path: string) => boolean, hasSentinel: (script: string) => boolean = () => true,
 ): { node: string; script: string } | null {
+  // The installed app carries the name it was built with (electron-builder.yml productName): on macOS `<name>.app`, whose
+  // executable has the same name; on Linux /opt/<name>/, with the package's own name as its executable.
+  const linuxRoot = `/opt/${PRODUCT_NAME}`;
   const candidates = platform === "darwin"
-    ? ["/Applications/OpenMausBot.app", join(home, "Applications", "OpenMausBot.app")].map((app) => ({
-      node: join(app, "Contents", "MacOS", "OpenMausBot"), script: join(app, "Contents", "Resources", "server", "openmausbot.js"),
-    }))
-    : platform === "linux" ? [{ node: "/opt/OpenMausBot/openmausbot", script: "/opt/OpenMausBot/resources/server/openmausbot.js" }] : [];
+    ? ["/Applications", join(home, "Applications")].map((folder) => {
+      const app = join(folder, `${PRODUCT_NAME}.app`);
+      return { node: join(app, "Contents", "MacOS", PRODUCT_NAME), script: join(app, "Contents", "Resources", "server", "openmausbot.js") };
+    })
+    : platform === "linux" ? [{ node: join(linuxRoot, LINUX_EXECUTABLE), script: join(linuxRoot, "resources", "server", "openmausbot.js") }] : [];
   return candidates.find((cli) => exists(cli.node) && exists(cli.script) && hasSentinel(cli.script)) ?? null;
 }
 
@@ -222,7 +231,7 @@ export function sentinelSystemdService(spec: SentinelServiceSpec): string {
   return [
     "# Written by `openmausbot service install --sentinel`. Started by its timer.",
     "[Unit]",
-    "Description=OpenMausBot Sentinel health scan",
+    `Description=${PRODUCT_NAME} Sentinel health scan`,
     "",
     "[Service]",
     "Type=oneshot",
@@ -239,7 +248,7 @@ export function sentinelSystemdTimer(): string {
   return [
     "# Written by `openmausbot service install --sentinel`.",
     "[Unit]",
-    "Description=Run the OpenMausBot Sentinel health scan every two minutes",
+    `Description=Run the ${PRODUCT_NAME} Sentinel health scan every two minutes`,
     "",
     "[Timer]",
     `OnBootSec=${SENTINEL_INTERVAL_SECONDS}s`,

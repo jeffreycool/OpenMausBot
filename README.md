@@ -1,6 +1,12 @@
 <div align="center">
 
-# OpenMausBot
+# TappoTeamBot
+
+> **Fork notice** — TappoTeamBot is a fork of [OpenMausBot](https://github.com/milind-soni/OpenMausBot)
+> (Apache License 2.0), © 2026 Milind Soni and OpenMausBot contributors. All credit for the original
+> project belongs to them; this repository is a team-internal customized build of their work and is
+> not developed or supported by the upstream authors. Upstream docs and links below refer to the
+> original project.
 
 **The open-source Grok Bot alternative: your own team of AI bots, in a chat app.**
 

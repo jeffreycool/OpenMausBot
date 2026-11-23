@@ -1,5 +1,7 @@
-export const APP_NAME = "OpenMausBot";
+export const APP_NAME = "TappoTeamBot";
 export const APP_REPOSITORY = "https://github.com/milind-soni/OpenMausBot";
+/** This fork's own repository (TappoTeamBot), for UI links about the fork build itself. */
+export const FORK_REPOSITORY = "https://github.com/jeffreycool/TappoTeamBot";
 export const DOCS_URL = `${APP_REPOSITORY}/tree/main/docs`;
 export const HELP_CENTER_URL = DOCS_URL;
 export const APPROVAL_LEVELS_URL = `${APP_REPOSITORY}/blob/main/docs/approval-levels.md`;

@@ -117,7 +117,7 @@ const BUDGET_BASELINE: Record<string, number> = {
   "default+images": 60010,
   "skills+shared+voice+x+team+images+hosting": 71107,
   "default+hosting": 59808,
-  "default+tools-off": 53040,
+  "default+tools-off": 54101, // the TappoTeamBot rename made every list longer (14 bytes here), which took this one 1 byte past its old ceiling of 54100: raised to its new size.
 };
 
 const RPC_PREFIX = '{"jsonrpc":"2.0","id":1,"result":';

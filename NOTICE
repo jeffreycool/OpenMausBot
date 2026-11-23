@@ -5,6 +5,10 @@ OpenMausBot was relicensed from the MIT License to the Apache License,
 Version 2.0, with the consent of all contributors whose copyright was
 incorporated before the transition.
 
+TappoTeamBot is a fork of OpenMausBot (https://github.com/milind-soni/OpenMausBot),
+Copyright 2026 Milind Soni and OpenMausBot contributors, used under the Apache License, Version 2.0.
+Modifications Copyright 2026 the TappoTeamBot authors.
+
 The Google Antigravity ACP integration adapts release, installation, profile,
 authentication, sign-out, session setup, client name, turn-outcome,
 usage-limit, and runtime temporary-folder behavior from T3 Code, Copyright 2026 T3 Tools Inc., used under the MIT License

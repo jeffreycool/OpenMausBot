@@ -327,6 +327,20 @@ posixOnly("per-bot visibility on a shared workspace", () => {
     expect((await runOf(hidden)).seenAt).toEqual(expect.any(Number));
   });
 
+  it("names the data folder, and the command that moves it, to the admin alone", async () => {
+    const admin = await api("GET", "/api/config");
+    expect(typeof admin.body.dataDir).toBe("string");
+    expect(admin.body.dataDir.length).toBeGreaterThan(0);
+    // The folder is "still an old one" only when it is ~/.openmausbot or ~/.opengrokbot; the command is written out for a terminal.
+    expect([null, admin.body.dataDir]).toContain(admin.body.legacyDataDir);
+    expect(admin.body.migrateCommand).toBe("openmausbot migrate-data");
+    // No folder under an earlier name sits beside this one in the test's home.
+    expect(admin.body.unusedDataDirs).toEqual([]);
+    const member = await api("GET", "/api/config", undefined, ADA);
+    expect(member.status).toBe(200);
+    for (const key of ["dataDir", "legacyDataDir", "migrateCommand", "unusedDataDirs"]) expect(member.body).not.toHaveProperty(key);
+  });
+
   it("withdraws real scan results when an audience changes before the response", async () => {
     const hold = join(home, ".openmausbot", "hold-search-result");
     let pending: Promise<{ status: number; body: any }> | undefined;

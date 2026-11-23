@@ -4,6 +4,8 @@ import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 
+import { resolveDataDir } from "./desktop-data-dir.mjs";
+
 export function revealDownloadWhenDone(item, reveal) {
   item.once("done", (_event, state) => {
     if (state === "completed") reveal(item.getSavePath());
@@ -50,10 +52,12 @@ function isSameFile(left, right) {
 }
 
 // Paths come from model-rendered markdown, so they are untrusted.
-async function resolveSource(rawPath, { home, fsp, platform }) {
+async function resolveSource(rawPath, { home, fsp, platform, env }) {
   const target = normalizeSourcePath(rawPath);
+  // The bots' files sit under the data folder, wherever the one rule (desktop-data-dir.mjs) puts it: under its current
+  // name, or under an earlier one, used where it is.
   const root = await canonicalPath(
-    path.join(home, ".openmausbot"),
+    resolveDataDir({ home, env }).dir,
     fsp,
     "Only files created by your bots can be saved",
   );
@@ -69,12 +73,12 @@ async function resolveSource(rawPath, { home, fsp, platform }) {
   return { filePath, stats };
 }
 
-export async function resolveSavablePath(rawPath, { home, fsp = fs.promises, platform = process.platform } = {}) {
-  return (await resolveSource(rawPath, { home, fsp, platform })).filePath;
+export async function resolveSavablePath(rawPath, { home, fsp = fs.promises, platform = process.platform, env = process.env } = {}) {
+  return (await resolveSource(rawPath, { home, fsp, platform, env })).filePath;
 }
 
-async function openSavableFile(rawPath, { home, fsp, platform }) {
-  const source = await resolveSource(rawPath, { home, fsp, platform });
+async function openSavableFile(rawPath, { home, fsp, platform, env }) {
+  const source = await resolveSource(rawPath, { home, fsp, platform, env });
   const noFollow = platform === "win32" ? 0 : fs.constants.O_NOFOLLOW ?? 0;
   const handle = await fsp.open(source.filePath, fs.constants.O_RDONLY | noFollow);
   try {
@@ -92,10 +96,10 @@ async function openSavableFile(rawPath, { home, fsp, platform }) {
 
 export async function withSavableFile(
   rawPath,
-  { home, fsp = fs.promises, platform = process.platform } = {},
+  { home, fsp = fs.promises, platform = process.platform, env = process.env } = {},
   operation,
 ) {
-  const { handle, filePath } = await openSavableFile(rawPath, { home, fsp, platform });
+  const { handle, filePath } = await openSavableFile(rawPath, { home, fsp, platform, env });
   try {
     return await operation({
       filePath,

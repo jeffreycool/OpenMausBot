@@ -44,17 +44,18 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root?.unmount()); root = null; host?.remove(); vi.unstubAllGlobals(); });
 
-it("someone who used the app before has the dot for Teams alone, and opening Announcements clears it here and in their record", async () => {
+// agentchat fork: the fork shows no announcement and no new mark (shared/announcements.ts UPSTREAM_ANNOUNCEMENTS_ENABLED = false): neither the file's
+// cards nor the built-in popups' rows, for anyone, and the page never asks for the cards. Upstream's cases for the rows come back with the constant.
+const remoteCard = { id: "remote-card", kind: "product", title: "Title", body: "Body.", primary: { label: "Open", action: { open_url: "https://example.com/" } }, ends: "2026-12-31T00:00:00Z" };
+const asked = (path: string) => vi.mocked(api).mock.calls.some(([asked]) => asked === path);
+
+it("the fork: someone who used the app before gets no row and no dot, and the page asks for no cards", async () => {
+  f.cards = [remoteCard];
   await mount();
-  expect(found.items[0]?.id).toBe(TEAMS_NOTICE);
-  expect(found.unread).toBe(true);
-  await act(async () => { found.markRead(); await Promise.resolve(); });
+  expect(found.items).toEqual([]);
   expect(found.unread).toBe(false);
-  const put = vi.mocked(api).mock.calls.find(([path, init]) => path === "/api/config" && (init as RequestInit | undefined)?.method === "PUT");
-  expect(JSON.parse(String((put![1] as RequestInit).body)).onboarding.hintsSeen).toEqual([`announcements-read-${Date.parse("2026-11-18T10:00:00Z")}`]);
-  localStorage.clear();
-  await act(async () => { root!.render(createElement(Probe)); });
-  expect(found.unread, "the place's record keeps it for their other devices").toBe(false);
+  expect(asked("/api/announcements")).toBe(false);
+  expect(found.unread, "so the page, which clears a mark only when there is one, writes nothing").toBe(false);
 });
 
 it("no dot once the Teams popup was seen, nor before the session is known", async () => {
@@ -68,14 +69,12 @@ it("no dot once the Teams popup was seen, nor before the session is known", asyn
   expect(found.unread, "waits for who is looking").toBe(false);
 });
 
-it("a Team Cloud's member: Teams is theirs, the dot too, and clearing it writes their own record", async () => {
+it("the fork: a Team Cloud's member neither: no row, no dot and no ask", async () => {
   f.session = { hosted: true, scopes: ["client"], team: { role: "member" } };
   f.state = { ...f.state, config: config([], { team: { id: "t", name: "Acme" }, cloudHome: true }) };
+  f.cards = [remoteCard];
   await mount();
-  expect(found.items.map(item => item.id)).toEqual([TEAMS_NOTICE]);
-  expect(found.unread).toBe(true);
-  await act(async () => { found.markRead(); await Promise.resolve(); });
-  expect(vi.mocked(api).mock.calls.some(([path]) => path === "/api/me/welcome")).toBe(true);
-  expect(vi.mocked(api).mock.calls.some(([path, init]) => path === "/api/config" && (init as RequestInit | undefined)?.method === "PUT"), "never the team's record").toBe(false);
+  expect(found.items).toEqual([]);
   expect(found.unread).toBe(false);
+  expect(asked("/api/announcements")).toBe(false);
 });

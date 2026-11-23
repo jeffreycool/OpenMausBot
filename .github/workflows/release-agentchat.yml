@@ -23,6 +23,20 @@ permissions:
   contents: write
 
 jobs:
+  check-tappo-brand:
+    # FORK-ONLY rename guard: fails when an upstream merge reverts a TappoTeamBot
+    # brand value (see scripts/check-tappo-brand.mjs) or touches a wire-compat
+    # value that must stay openmausbot.
+    name: Check TappoTeamBot brand surface
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/check-tappo-brand.mjs
+
   release:
     # Create the Release shell first so the two build jobs never race on it.
     name: Create the release for the tag
@@ -98,13 +112,13 @@ jobs:
       - name: Package Windows x64 (unsigned)
         run: pnpm package:win
       - name: Disambiguate the Windows zip name
-        # electron-builder names the win zip OpenMausBot-<v>-x64.zip — the same
+        # electron-builder names the win zip TappoTeamBot-<v>-x64.zip — the same
         # name as the mac x64 zip uploaded by the mac job. Same-named assets
         # overwrite each other on the release, so rename before uploading.
         shell: bash
         run: |
           v=$(node -p "require('./package.json').version")
-          mv "release/OpenMausBot-$v-x64.zip" "release/OpenMausBot-$v-win-x64.zip"
+          mv "release/TappoTeamBot-$v-x64.zip" "release/TappoTeamBot-$v-win-x64.zip"
       - name: Upload Windows artifacts to the release
         uses: softprops/action-gh-release@v2
         with:

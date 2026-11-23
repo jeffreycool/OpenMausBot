@@ -1,7 +1,8 @@
 import { ArrowUpRight } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { CLOUD_PLAN_URL } from "@/lib/app-links";
-import { productName } from "@/lib/brand";
+import { productName, UPSTREAM_NAME } from "@/lib/brand";
+import { AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES } from "@/lib/fork-flags";
 import { api, useStore } from "@/state/store";
 import { useState } from "react";
 import { InertRow, useSwitchToComputer } from "../inert";
@@ -43,7 +44,7 @@ export function AccountPage() {
     {bridge && <CloudAccountSettings part="account" advanced={ctx.advanced} linkRequest={state.appSettingsCloudLink} avatar={<YouAvatar size={32} />}
       onSignIn={() => dispatch({ type: "openCloudAdd", source: "app_settings", signIn: true })} />}
     {elsewhere && (
-      <SettingsGroup label={t("settings.account.mausbot", { app: productName() })} block="mausbot-account">
+      <SettingsGroup label={t("settings.account.mausbot", { app: UPSTREAM_NAME })} block="mausbot-account">
         <SettingsRows icons>
           {/* The same card as on This computer: who is signed in (live, it is the person's own), then the way to sign out
               or switch accounts, which happens on This computer, in Sign out's place. Refresh is This computer's only. */}
@@ -77,8 +78,8 @@ export function AccountPage() {
         <SettingsRows><InertRow title={t("settings.account.orgSignIn")} control={<button type="button" className="ui-button" tabIndex={-1}>{t("settings.account.signIn")}</button>} /></SettingsRows>
       </SettingsGroup>
     )}
-    {ctx.desktop && !ctx.client && window.ogb?.updatesConsent && (
-      <SettingsGroup label={t("settings.account.emails", { app: productName() })} block="emails">
+    {!AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES && ctx.desktop && !ctx.client && window.ogb?.updatesConsent && (
+      <SettingsGroup label={t("settings.account.emails", { app: UPSTREAM_NAME })} block="emails">
         <SettingsRows><UpdatesConsentRow /></SettingsRows>
       </SettingsGroup>
     )}

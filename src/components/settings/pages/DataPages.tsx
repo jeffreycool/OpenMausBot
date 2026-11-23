@@ -4,6 +4,7 @@ import { AdminOnly } from "../../AdminOnly";
 import { AttachmentStorageSettings } from "../../AttachmentStorageSettings";
 import { AccessOverview } from "../../bot-access/AccessOverview";
 import { CompanyBackupSettings } from "../../CompanyBackupSettings";
+import { DataFolderSettings } from "../../DataFolderSettings";
 import { ImportSettings } from "../../ImportSettings";
 import { PeopleSection } from "../../PeopleSection";
 import { SettingsGroup, SettingsRows } from "../../SettingsPrimitives";
@@ -42,7 +43,7 @@ export function DataPage() {
   const { ctx } = useSettingsShell();
   return <>
     <SettingsGroup label={t("settings.data.storage")} block="storage">
-      <SettingsRows><AttachmentStorageSettings /></SettingsRows>
+      <SettingsRows><DataFolderSettings /><AttachmentStorageSettings /></SettingsRows>
     </SettingsGroup>
     {ctx.advanced && <ThreadCleanupSettings />}
     {!ctx.desktop && ctx.admin && <ActivitySection />}

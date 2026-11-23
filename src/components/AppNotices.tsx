@@ -19,6 +19,7 @@ import { rememberNoticeSeen } from "@/lib/announcement-history";
 import { reportTeams, teamsAction } from "@/lib/teams-whats-new";
 import { useTwoPlaces } from "@/lib/two-places";
 import { SIMPLE_ONLY } from "@/lib/simple-only";
+import { AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES } from "@/lib/fork-flags";
 import { useAdvancedBackDue, useNewLookDue } from "@/lib/new-look";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { useSimpleModePromptSeen } from "@/lib/simple-mode-prompt";
@@ -101,7 +102,7 @@ export function AppNotices({ quiet = false, viewer = null, now = Date.now }: { q
   const [grokShown, setGrokShown] = useState(false);
   const [grokOpen, setGrokOpen] = useState(false);
   const [grokLanded, setGrokLanded] = useState(false);
-  const consentHere = (local || viewer?.cloudHome === true) && brandStatus().source !== "file";
+  const consentHere = !AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES && (local || viewer?.cloudHome === true) && brandStatus().source !== "file";
   const consent = useUpdatesConsent(consentHere ? updatesConsentBridge() : undefined);
   const [consentDone, setConsentDone] = useState(false);
   const updater = useUpdaterState();
@@ -131,12 +132,12 @@ export function AppNotices({ quiet = false, viewer = null, now = Date.now }: { q
   }, []);
   const view = bridge ? cloudPlanView(account) : null;
   const record = state.config?.onboarding;
-  const introAllowed = Boolean(bridge) && brandStatus().source !== "file" && organization !== true && !onboardingCloudOffered(record);
+  const introAllowed = !AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES && Boolean(bridge) && brandStatus().source !== "file" && organization !== true && !onboardingCloudOffered(record);
   const stage = introStage(record, now());
   const trialDue = cloudTrialNotice(plan);
   // What's new: This computer's page of a desktop that sells MausBot Cloud, once per person; never on a branded build or a
   // desktop an organization runs.
-  const whatsNewHere = Boolean(bridge && desktop) && brandStatus().source !== "file";
+  const whatsNewHere = !AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES && Boolean(bridge && desktop) && brandStatus().source !== "file";
   const whatsNewSeen = noticeSeen(record, WHATS_NEW_NOTICE);
   const whatsNewDue = !whatsNewHere || whatsNewSeen || organization === true ? false : !desktopState || organization === null ? null
     : desktopState.cloud && !desktopState.seen.includes(WHATS_NEW_NOTICE);
@@ -233,7 +234,7 @@ export function AppNotices({ quiet = false, viewer = null, now = Date.now }: { q
   // as the What's new popup, never in the launch a welcome or MausBot's card took, before a first reply, over a first
   // run's own screens or another dialog, during a live call or a move.
   const teamsSeen = noticeSeen(record, TEAMS_NOTICE) || Boolean(desktopState?.seen.includes(TEAMS_NOTICE));
-  const teamsHere = !branded && organization !== true && !teamsSeen;
+  const teamsHere = !AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES && !branded && organization !== true && !teamsSeen;
   const teamsBlocked = useOtherDialogOpen(teamsHere, true) || Boolean(state.liveCall && state.liveCall.status !== "ended");
   const teamsNow = !teamsHere || moving || afterWelcome === true ? false
     : organization === null || !viewer || (desktop && !desktopState) || afterWelcome === null || mausBotFirst || moving === null || teamsBlocked ? null : true;
@@ -262,8 +263,8 @@ export function AppNotices({ quiet = false, viewer = null, now = Date.now }: { q
     [PRODUCT_HUNT_NOTICE]: !cards || moving || firstChat === true || brandStatus().source === "file" || now() >= PRODUCT_HUNT_UNTIL ? false
       : organization === null || moving === null || firstChat === null ? null : !organization,
     [CLOUD_INTRO]: moving ? false : moving === null ? null : introDue(),
-    [CLOUD_TRIAL_NOTICE]: planBridge && plan === null ? null : Boolean(key && (trialDue || trialOpen === key)),
-    [CLOUD_NOTICE]: !view ? false : view.kind === "unknown" ? null
+    [CLOUD_TRIAL_NOTICE]: AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES ? false : planBridge && plan === null ? null : Boolean(key && (trialDue || trialOpen === key)),
+    [CLOUD_NOTICE]: AGENTCHAT_HIDE_UPSTREAM_CLOUD_NOTICES || !view ? false : view.kind === "unknown" ? null
       : Boolean(kind && !noticeSeen(record, CLOUD_NOTICE_CARD[kind].dismissed)),
     [MODELGO_OFFER_NOTICE]: modelgoNow,
     [BOAT_OFFER_NOTICE]: !boatHere || moving || afterWelcome === true || !usedBefore(state.bots) || desktopState?.seen.includes(BOAT_OFFER_NOTICE) ? false

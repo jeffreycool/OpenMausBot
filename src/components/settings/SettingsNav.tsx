@@ -4,7 +4,7 @@ import { cloudColor } from "@/lib/cloud-look";
 import { placeInitials } from "@/lib/places";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
-import { productName } from "@/lib/brand";
+import { productName, UPSTREAM_NAME } from "@/lib/brand";
 import { setAdvancedMode, useAdvancedMode } from "@/lib/interface-mode";
 import { SIMPLE_ONLY } from "@/lib/simple-only";
 import { useStore } from "@/state/store";
@@ -280,11 +280,14 @@ function highlight(label: string, query: string): ReactNode {
   return <>{label.slice(0, at)}<span className="font-medium">{label.slice(at, end)}</span>{label.slice(end)}</>;
 }
 
+/** Search hits whose name is upstream's (its account, its Relay) rather than this app's. */
+const UPSTREAM_NAMED_HITS = new Set(["emails", "relay"]);
+
 export function hitLabel(hit: SearchHit, place: SettingsPlace, desktop: boolean): string {
   if (hit.entry.id === "page:overview") return place.name;
   if (hit.entry.id === "page:account") return t("settings.page.account");
   if (hit.entry.id === "page:app") return desktop ? t("settings.page.app") : t("settings.page.browser");
-  return t(hit.entry.macLabelKey && isMacPlatform() ? hit.entry.macLabelKey : hit.entry.labelKey, { app: productName(), helper: "" });
+  return t(hit.entry.macLabelKey && isMacPlatform() ? hit.entry.macLabelKey : hit.entry.labelKey, { app: UPSTREAM_NAMED_HITS.has(hit.entry.id) ? UPSTREAM_NAME : productName(), helper: "" });
 }
 
 function HitRow({ ctx, place, hit, query, onHit }: { ctx: SettingsContext; place: SettingsPlace; hit: SearchHit; query: string; onHit: (hit: SearchHit) => void }) {

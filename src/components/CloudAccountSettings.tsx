@@ -11,7 +11,7 @@ import { useCloudOffer } from "@/lib/use-cloud-offer";
 import type { LocaleKey } from "@/locales";
 import { AccountsSheet } from "./AccountMenu";
 import { Card, SettingRow, SettingsGroup, SettingsLinkRow, SettingsRows } from "./SettingsPrimitives";
-import { productName } from "@/lib/brand";
+import { UPSTREAM_NAME } from "@/lib/brand";
 import { type CloudRenewalActions } from "./CloudCancelPlan";
 import { SignOutConfirm } from "./settings/SignOutConfirm";
 import { CancelPlanRow, KeepPlanButton, endedLine, planLayout, planTitle, renewalLine } from "./settings/plan-parts";
@@ -267,10 +267,10 @@ export function CloudAccountSettings({ linkRequest = 0, cloudHome = false, teamH
     // and Sign out as the card's last row. A Cloud's page draws the same card with "from This computer" in that place.
     const blank = <span aria-hidden="true" />;
     return <>
-      <SettingsGroup label={t("settings.account.mausbot", { app: productName() })} block="mausbot-account">
+      <SettingsGroup label={t("settings.account.mausbot", { app: UPSTREAM_NAME })} block="mausbot-account">
         <SettingsRows icons>
           {(!account || view.kind === "unknown") && <SettingRow title={t("cloudAccount.loading")} leading={avatar ?? blank}>{!account && <button type="button" disabled={busy} className="ui-button" onClick={() => void perform(() => bridge.state())}>{t("organization.refresh")}</button>}</SettingRow>}
-          {signedOut && <SettingRow title={t("settings.account.signInTitle", { app: productName() })} subtitle={t("settings.account.signInBody")} message={message && <p role="status">{message}</p>} leading={avatar ?? blank}>
+          {signedOut && <SettingRow title={t("settings.account.signInTitle", { app: UPSTREAM_NAME })} subtitle={t("settings.account.signInBody")} message={message && <p role="status">{message}</p>} leading={avatar ?? blank}>
             <button type="button" disabled={busy} className="ui-button ui-button-primary" data-account-sign-in="" onClick={() => onSignIn ? onSignIn() : void perform(() => bridge.begin())}>{t("settings.account.signIn")}</button>
           </SettingRow>}
           {account?.status === "connecting" && <SettingRow title={t("cloudAccount.browser")} leading={avatar ?? blank} subtitle={enrollment ? `${t("cloudAccount.codeCheck")} ${t("cloudAccount.codeUntil", { time: time(enrollment.expiresAt) })}` : undefined}
@@ -283,7 +283,7 @@ export function CloudAccountSettings({ linkRequest = 0, cloudHome = false, teamH
               ? <button type="button" disabled={busy} className="ui-button" onClick={() => void perform(() => bridge.signInAgain())}>{t("cloudAccount.signInAgain")}</button>
               : advanced && <button type="button" disabled={busy} className="settings-quiet cursor-pointer" onClick={() => void perform(() => bridge.refresh())}>{t("organization.refresh")}</button>}
           </SettingRow>}
-          {signed && <div data-settings-block="sign-out" className="contents"><SettingRow title={t("settings.account.signOut", { app: productName() })} leading={blank}>
+          {signed && <div data-settings-block="sign-out" className="contents"><SettingRow title={t("settings.account.signOut", { app: UPSTREAM_NAME })} leading={blank}>
             <button type="button" disabled={busy} data-danger="" className="settings-quiet cursor-pointer" onClick={() => setConfirm("sign-out")}>{t("settings.account.signOutShort")}</button>
           </SettingRow></div>}
         </SettingsRows>

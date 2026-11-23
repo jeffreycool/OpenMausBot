@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ANNOUNCEMENTS_URL, type AnnouncementFeed } from "../../shared/announcements.ts";
+import { ANNOUNCEMENTS_URL, UPSTREAM_ANNOUNCEMENTS_ENABLED, type AnnouncementFeed } from "../../shared/announcements.ts";
 import {
   ANNOUNCEMENTS_DISABLE_ENV, ANNOUNCEMENTS_RETRY_MS, ANNOUNCEMENTS_TTL_MS, AnnouncementStore, announcementsCachePath, BUNDLED_ANNOUNCEMENTS,
 } from "./feed.ts";
@@ -41,7 +41,59 @@ it("tests never reach the network: the suite switches it off for every server it
   expect(process.env[ANNOUNCEMENTS_DISABLE_ENV]).toBe("1");
 });
 
+// agentchat fork: the fork never reads the upstream file (shared/announcements.ts UPSTREAM_ANNOUNCEMENTS_ENABLED). These cases hold that with
+// the suite's own switch taken out of the way, and a fake fetch that would show any request.
+describe("the fork never downloads the file", () => {
+  it("is switched off in the constant this server and the pages share", () => {
+    expect(UPSTREAM_ANNOUNCEMENTS_ENABLED).toBe(false);
+  });
+
+  it("a page's ask answers nothing, fetches nothing, waits on nothing, and writes no cache, the bundled cards included", async () => {
+    const fetchMock = vi.fn();
+    const dir = dataDir();
+    const { store } = subject({ dir, fetch: fetchMock, bundled: feed("2026-11-01T00:00:00Z", [card("bundled-card")]) });
+    const started = Date.now();
+    expect(await store.cardsForPage()).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(store.cards()).toEqual([]);
+    expect(store.disabled).toBe(true);
+    await Promise.all([store.refresh({ force: true }), store.refresh()]);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(existsSync(announcementsCachePath(dir))).toBe(false);
+  });
+
+  it("a copy an earlier version left on disk is not read", async () => {
+    const dir = dataDir();
+    mkdirSync(dirname(announcementsCachePath(dir)), { recursive: true });
+    writeFileSync(announcementsCachePath(dir), JSON.stringify({ fetchedAtMs: NOW - 1000, feed: feed("2026-11-30T00:00:00Z", [card("left-over")]) }));
+    const { store } = subject({ dir, fetch: vi.fn() });
+    expect(await store.cardsForPage()).toEqual([]);
+    expect(store.cards()).toEqual([]);
+  });
+
+  it("GET /api/announcements answers an empty list by the constant alone, without the suite's switch and without the network", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("the fork never downloads"));
+    vi.stubEnv(ANNOUNCEMENTS_DISABLE_ENV, "");
+    try {
+      const { announcementRoutes, ANNOUNCEMENTS_PATH } = await import("../routes/announcements.ts");
+      const sent: unknown[] = [];
+      const json = ((_res: unknown, status: number, body: unknown) => { sent.push({ status, body }); }) as never;
+      await announcementRoutes({ req: {} as never, res: {} as never, url: new URL(`http://x${ANNOUNCEMENTS_PATH}`), path: ANNOUNCEMENTS_PATH, method: "GET", auth: {} as never, json, readBody: (async () => ({})) as never });
+      expect(sent).toEqual([{ status: 200, body: { cards: [], disabled: true } }]);
+    } finally {
+      vi.unstubAllEnvs();
+      fetchSpy.mockRestore();
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
 describe("downloading the file", () => {
+  // agentchat fork: the fork never downloads (the block above). The download code is kept as upstream wrote it, so these cases still hold
+  // it to upstream's expectations with a fake fetch, the constant's answer set aside for this block only.
+  beforeEach(() => { vi.spyOn(AnnouncementStore.prototype, "disabled", "get").mockReturnValue(false); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
   it("asks main's raw file with a plain GET, nothing of the person's sent, and keeps what it got", async () => {
     const fetchMock = vi.fn(async (..._args: Parameters<typeof fetch>) => answer(feed("2026-12-01T09:00:00Z", [card("phone-app")])));
     const dir = dataDir();

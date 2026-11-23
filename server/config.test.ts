@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -2423,6 +2423,7 @@ describe("DATA_DIR outside the suite's throwaway home", () => {
     const realHome = userInfo().homedir;
     const dataDir = childDataDir({ HOME: realHome, USERPROFILE: realHome, VITEST: "true" });
     try {
+      expect(dataDir).not.toBe(join(realHome, ".tappoteambot"));
       expect(dataDir).not.toBe(join(realHome, ".openmausbot"));
       expect(dataDir.startsWith(tmpdir())).toBe(true);
     } finally {
@@ -2437,7 +2438,7 @@ describe("DATA_DIR outside the suite's throwaway home", () => {
   it("treats an empty OMB_DATA_DIR as unset", () => {
     const home = mkdtempSync(join(tmpdir(), "omb-config-home-"));
     try {
-      expect(childDataDir({ HOME: home, USERPROFILE: home, OMB_DATA_DIR: "" })).toBe(join(home, ".openmausbot"));
+      expect(childDataDir({ HOME: home, USERPROFILE: home, OMB_DATA_DIR: "" })).toBe(join(home, ".tappoteambot"));
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
@@ -2446,7 +2447,115 @@ describe("DATA_DIR outside the suite's throwaway home", () => {
   it("keeps the home folder outside tests", () => {
     const home = mkdtempSync(join(tmpdir(), "omb-config-home-"));
     try {
-      expect(childDataDir({ HOME: home, USERPROFILE: home })).toBe(join(home, ".openmausbot"));
+      expect(childDataDir({ HOME: home, USERPROFILE: home })).toBe(join(home, ".tappoteambot"));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  function childEnsure(home: string, extraEnv: Record<string, string> = {}): { dataDir: string; legacy: string | null; renamedFrom: string | null } {
+    const script = `const m = await import(process.env.OMB_CONFIG_URL); m.ensureDirs();
+      process.stdout.write(JSON.stringify({ dataDir: m.DATA_DIR, legacy: m.LEGACY_DATA_DIR, renamedFrom: m.dataDirRenamedFrom }));`;
+    const { OMB_DATA_DIR: _dataDir, VITEST: _vitest, NODE_ENV: _nodeEnv, ...inherited } = process.env;
+    return JSON.parse(execFileSync(process.execPath, ["--experimental-strip-types", "--no-warnings", "--input-type=module", "-e", script], {
+      env: { ...inherited, OMB_CONFIG_URL: pathToFileURL(join(import.meta.dirname, "config.ts")).href, HOME: home, USERPROFILE: home, ...extraEnv },
+      encoding: "utf8",
+    }));
+  }
+
+  // Nothing moves at start (incident 2026-11-23): a folder under an earlier name is used where it is, whatever it holds.
+  const fakeHome = (): string => {
+    const home = mkdtempSync(join(tmpdir(), "omb-rename-home-"));
+    mkdirSync(join(home, ".openmausbot"));
+    writeFileSync(join(home, ".openmausbot", "config.json"), "{}");
+    return home;
+  };
+
+  it("uses a pre-rename .openmausbot folder where it is, and reports it as the legacy folder", () => {
+    const home = fakeHome();
+    try {
+      const legacy = join(home, ".openmausbot");
+      const result = childEnsure(home);
+      expect(result.dataDir).toBe(legacy);
+      expect(result.legacy).toBe(legacy);
+      expect(result.renamedFrom).toBeNull();
+      expect(existsSync(join(legacy, "config.json"))).toBe(true);
+      expect(existsSync(join(legacy, "events"))).toBe(true);
+      expect(existsSync(join(home, ".tappoteambot"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("prefers the newest legacy folder (.openmausbot) over the oldest (.opengrokbot)", () => {
+    const home = fakeHome();
+    try {
+      mkdirSync(join(home, ".opengrokbot"));
+      const result = childEnsure(home);
+      expect(result.legacy).toBe(join(home, ".openmausbot"));
+      expect(existsSync(join(home, ".opengrokbot"))).toBe(true);
+      expect(existsSync(join(home, ".tappoteambot"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("uses an ancient .opengrokbot folder where it is when .openmausbot never existed", () => {
+    const home = mkdtempSync(join(tmpdir(), "omb-rename-home-"));
+    try {
+      const ancient = join(home, ".opengrokbot");
+      mkdirSync(ancient);
+      const result = childEnsure(home);
+      expect(result.dataDir).toBe(ancient);
+      expect(result.legacy).toBe(ancient);
+      expect(existsSync(ancient)).toBe(true);
+      expect(existsSync(join(home, ".tappoteambot"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("a legacy folder holding many bots is used where it is, the same as an empty one", () => {
+    const home = fakeHome();
+    try {
+      const legacy = join(home, ".openmausbot");
+      writeFileSync(join(legacy, "bots.json"), JSON.stringify([{ id: "a" }, { id: "b" }, { id: "c" }, { id: "d" }]));
+      for (const extra of [{}, { OMB_ALLOW_DATA_MIGRATION: "1" }] as Record<string, string>[]) {
+        const result = childEnsure(home, extra);
+        expect(result.dataDir).toBe(legacy);
+        expect(result.renamedFrom).toBeNull();
+        expect(existsSync(join(legacy, "bots.json"))).toBe(true);
+        expect(existsSync(join(home, ".tappoteambot"))).toBe(false);
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves an existing .tappoteambot folder as the data folder and reports no legacy folder", () => {
+    const home = fakeHome();
+    try {
+      const live = join(home, ".tappoteambot");
+      mkdirSync(live);
+      writeFileSync(join(live, "marker.txt"), "live");
+      const result = childEnsure(home);
+      expect(result.dataDir).toBe(live);
+      expect(result.legacy).toBeNull();
+      expect(result.renamedFrom).toBeNull();
+      expect(readFileSync(join(live, "marker.txt"), "utf8")).toBe("live");
+      expect(existsSync(join(home, ".openmausbot", "config.json"))).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("OMB_DATA_DIR wins over every folder, and is the legacy folder only when it names one", () => {
+    const home = fakeHome();
+    try {
+      const elsewhere = join(home, "elsewhere");
+      mkdirSync(elsewhere);
+      expect(childEnsure(home, { OMB_DATA_DIR: elsewhere })).toMatchObject({ dataDir: elsewhere, legacy: null });
+      expect(childEnsure(home, { OMB_DATA_DIR: join(home, ".openmausbot") })).toMatchObject({ dataDir: join(home, ".openmausbot"), legacy: join(home, ".openmausbot") });
     } finally {
       rmSync(home, { recursive: true, force: true });
     }

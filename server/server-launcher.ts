@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { boxMemory, heapSizeArgs, type BoxMemory } from "./box-memory.ts";
 import { containerInit, execUnderInit, UNDER_IMAGE_INIT } from "./container-init.ts";
 import { clearRecordsFromEarlierRunOfThisContainer } from "./data-dir-lease.ts";
+import { resolveDataDir } from "./data-dir.ts";
 import { restartLine, restartPolicy } from "./restart.ts";
 
 /** The server's heap sized to the container's memory limit, run through the bootstrap that keeps Node's compile cache on
@@ -14,7 +15,7 @@ import { restartLine, restartPolicy } from "./restart.ts";
 export function serverCommand(here: string, env: NodeJS.ProcessEnv, options: { exists?: (path: string) => boolean; box?: BoxMemory } = {}) {
   const bootstrap = join(here, "desktop-entry.mjs");
   const cached = (options.exists ?? existsSync)(bootstrap);
-  const dataDir = env.OMB_DATA_DIR || join(homedir(), ".openmausbot");
+  const dataDir = resolveDataDir({ home: homedir(), env }).dir;
   return {
     args: [...heapSizeArgs((options.box ?? boxMemory()).cgroupLimit, env.NODE_OPTIONS), cached ? bootstrap : join(here, "index.js")],
     env: cached ? { ...env, OMB_SERVER_COMPILE_CACHE: join(dataDir, "cache", "node-compile") } : env,
@@ -61,7 +62,7 @@ if (isEntry()) {
   if (init.line) console.warn(init.line);
   if (init.exec) execUnderInit(init.exec);
   delete process.env[UNDER_IMAGE_INIT];
-  const dataDir = process.env.OMB_DATA_DIR || join(homedir(), ".openmausbot");
+  const dataDir = resolveDataDir({ home: homedir(), env: process.env }).dir;
   try {
     // A container starts with nothing of its own running: a lease its earlier run left is a dead server's.
     for (const { path, pid } of clearRecordsFromEarlierRunOfThisContainer(dataDir)) console.log(`Removed ${path}, left by this container's server (process ${pid}) when it stopped without closing.`);

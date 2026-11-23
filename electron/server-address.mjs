@@ -150,7 +150,8 @@ export function parseServerInput(addressInput, codeInput = "") {
   if (asCode.kind === "wrong" && asCode.problem !== "notACode") return { ok: false, problem: asCode.problem };
   if (/[\s\\]/.test(text)) return { ok: false, problem: "notAnAddress" };
   let secret = null;
-  if (/^openmausbot:/i.test(text)) {
+  // Fork rename compat: pairing links minted before the TappoTeamBot rename keep parsing.
+  if (/^(?:openmausbot|tappoteambot):/i.test(text)) {
     let link;
     try {
       link = appLink(new URL(text));

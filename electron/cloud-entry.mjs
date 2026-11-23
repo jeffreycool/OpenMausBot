@@ -1,7 +1,8 @@
 // An action, not a router: it never carries an address, code or credential.
-export const CLOUD_DEEP_LINK = "openmausbot://cloud";
+export const CLOUD_DEEP_LINK = "tappoteambot://cloud";
 
-export const isCloudDeepLink = value => value === CLOUD_DEEP_LINK;
+// Fork rename compat: links minted before the TappoTeamBot rename keep opening.
+export const isCloudDeepLink = value => value === CLOUD_DEEP_LINK || value === "openmausbot://cloud";
 export function takeCloudDeepLink(argv) {
   let found = false;
   // Relaunch reuses process.argv: consume only this one-shot action, leaving flags and other links untouched.

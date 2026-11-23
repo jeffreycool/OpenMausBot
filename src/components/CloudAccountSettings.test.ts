@@ -237,7 +237,7 @@ it("on the person's own Cloud, Settings shows the plan read only, with Manage, a
   await flush(); expect(plan.signIn).toHaveBeenCalledExactlyOnceWith();
   plan.state.mockRejectedValueOnce(new Error("cloud-plan:state is only available in this app's window")); f.values = []; view(); f.effects[0](); await flush();
   const refused = view();
-  expect(refused.html).toContain("Your plan is managed in the MausBot app on your computer.");
+  expect(refused.html).toContain("Your plan is managed in the TappoTeamBot app on your computer.");
   expect(refused.nodes.some(node => node.type === "button")).toBe(false);
   none(refused.html, ["Could not complete", 'role="alert"', "Loading"]);
 });
@@ -248,11 +248,11 @@ it("on My Cloud once it is home, Settings is that app's own: the plan is managed
     return { html: renderToStaticMarkup(createElement(Capture)), nodes: nodes(tree) }; };
   view(); f.effects[0](); await flush();
   all(view().html, ["Your plan is managed on your Plan page.", "Your plan is managed on your Plan page.", "Manage subscription"]);
-  none(view().html, ["MausBot app", "on your computer"]);
+  none(view().html, ["TappoTeamBot app", "on your computer"]);
   plan.state.mockResolvedValueOnce({ status: "paid", tier: "pro", home: true }); f.values = []; view(); f.effects[0](); await flush();
   all(view().html, [">Pro<", "Manage subscription"]); none(view().html, ["on your computer"]);
   plan.state.mockResolvedValueOnce({ status: "none" }); f.values = []; view(); f.effects[0](); await flush();
-  all(view().html, ["Your plan is managed in the MausBot app on your computer."]);
+  all(view().html, ["Your plan is managed in the TappoTeamBot app on your computer."]);
 });
 
 const pro: CloudAccountState = { ...free, entitlement: { plan: "pro", status: "active", expiresAt: 1_900_000_000_000, version: 2 } };
@@ -463,7 +463,7 @@ it("on a Team Cloud, sends its admins to the invite box on the team's People pag
   const html = renderToStaticMarkup(createElement(TeamPeopleCard, { team, admin: true }));
   all(html, ["People and plan", "Invite or remove people in Acme and change their roles on its People page on MausBot Cloud.",
     'href="https://cloud.example.com/cloud/team/team-acme/people?do=invite"', "Invite people"]);
-  none(html, ["managed in the MausBot app on your computer", "Plan page", "seats"]);
+  none(html, ["managed in the TappoTeamBot app on your computer", "Plan page", "seats"]);
   const owner = renderToStaticMarkup(createElement(TeamPeopleCard, { team, admin: true, owner: true }));
   all(owner, ["Invite or remove people in Acme, add seats and change roles", 'href="https://cloud.example.com/cloud/team/team-acme/people?do=invite"',
     'href="https://cloud.example.com/cloud/team/team-acme/people?do=seats"', "Add seats"]);

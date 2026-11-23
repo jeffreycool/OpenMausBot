@@ -10,7 +10,7 @@ import type { CloudPlanView } from "@/lib/cloud-plan";
 import type { ManagedPolicySummary } from "@/state/config-status";
 import { api, type AppState } from "@/state/store";
 import {
-  ADMIN_PLACES, audienceMatches, cardPlaces, parseAnnouncementCard, type AnnouncementCard, type AnnouncementFacts, type AnnouncementKind,
+  ADMIN_PLACES, audienceMatches, cardPlaces, parseAnnouncementCard, UPSTREAM_ANNOUNCEMENTS_ENABLED, type AnnouncementCard, type AnnouncementFacts, type AnnouncementKind,
   type AnnouncementPlan, type AnnouncementPlatform, type AnnouncementSurface,
 } from "../../shared/announcements";
 
@@ -70,8 +70,9 @@ const snapshot = () => cards;
  * again once the last answer is an hour old, so a page in use follows the file without a timer of its own. */
 export function useAnnouncementCards(enabled: boolean, now: () => number = Date.now): AnnouncementCard[] {
   const current = useSyncExternalStore(subscribe, snapshot, snapshot);
-  useEffect(() => { if (enabled) ask(now()); });
-  return enabled ? current : [];
+  const on = enabled && UPSTREAM_ANNOUNCEMENTS_ENABLED;
+  useEffect(() => { if (on) ask(now()); });
+  return on ? current : [];
 }
 
 /** When the cards' file last changed (epoch ms), as the server said; null before it answers or from an older server. */

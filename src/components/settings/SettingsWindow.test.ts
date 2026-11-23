@@ -74,7 +74,7 @@ describe("the Settings window", () => {
     const account = render("account");
     expect(account).toContain("Your MausBot account");
     expect(account).not.toContain("Same on every place");
-    expect(render("appearance")).toContain("MausBot on this device");
+    expect(render("appearance")).toContain("TappoTeamBot on this device");
   });
 
   // Owner decisions (Nov 11, Nov 12): Simple's nav is shorter. Nine entries, the same for every person and every rail.

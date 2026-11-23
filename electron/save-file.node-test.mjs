@@ -6,6 +6,7 @@ import path from "node:path";
 import { after, before, describe, it } from "node:test";
 import { pathToFileURL } from "node:url";
 
+import { DATA_DIR_NAME } from "./desktop-data-dir.mjs";
 import { collisionFreeDownloadPath, defaultSaveName, htmlCopyName, openFolder, openHtmlCopy, openLogsFolder, resolveSavablePath, revealDownloadWhenDone, revealInFolder, withSavableFile } from "./save-file.mjs";
 
 // Creating a symlink on Windows needs elevation or developer mode.
@@ -36,13 +37,15 @@ after(() => {
   fs.rmSync(home, { recursive: true, force: true });
 });
 
+// The bots' files are looked for under the data folder by the one rule (desktop-data-dir.mjs). OMB_DATA_DIR, when a shell
+// exports it, names another folder, so every call here says which environment applies.
 describe("save-file path validation", () => {
   it("accepts a file inside the bot home, as a path or a file:// URL", async () => {
     const file = path.join(botHome, "workspaces", "bot", "report.docx");
     // fs.promises.realpath, as the module uses: on Windows the callback API leaves 8.3 short names that the promises API expands.
     const expected = await fs.promises.realpath(file);
-    assert.equal(await resolveSavablePath(file, { home }), expected);
-    assert.equal(await resolveSavablePath(pathToFileURL(file).href, { home }), expected);
+    assert.equal(await resolveSavablePath(file, { home, env: {} }), expected);
+    assert.equal(await resolveSavablePath(pathToFileURL(file).href, { home, env: {} }), expected);
   });
 
   it("accepts a file under a symlinked bot home", { skip: !canSymlink }, async () => {
@@ -54,7 +57,7 @@ describe("save-file path validation", () => {
     fs.symlinkSync(realBotHome, path.join(linkedHome, ".openmausbot"));
 
     const viaLink = path.join(linkedHome, ".openmausbot", "report.docx");
-    assert.equal(await resolveSavablePath(viaLink, { home: linkedHome }), await fs.promises.realpath(viaLink));
+    assert.equal(await resolveSavablePath(viaLink, { home: linkedHome, env: {} }), await fs.promises.realpath(viaLink));
 
     fs.rmSync(realHome, { recursive: true, force: true });
     fs.rmSync(linkedHome, { recursive: true, force: true });
@@ -62,24 +65,44 @@ describe("save-file path validation", () => {
 
   it("rejects paths outside the bot home, including via traversal", async () => {
     const rejected = "Only files created by your bots can be saved";
-    await assert.rejects(resolveSavablePath(path.join(home, "secret.txt"), { home }), { message: rejected });
-    await assert.rejects(resolveSavablePath(path.join(botHome, "..", "secret.txt"), { home }), { message: rejected });
+    await assert.rejects(resolveSavablePath(path.join(home, "secret.txt"), { home, env: {} }), { message: rejected });
+    await assert.rejects(resolveSavablePath(path.join(botHome, "..", "secret.txt"), { home, env: {} }), { message: rejected });
+  });
+
+  it("finds the bots' files under the data folder's current name, and once that folder is there, only under it", async () => {
+    const currentHome = fs.mkdtempSync(path.join(os.tmpdir(), "omb-save-file-current-"));
+    try {
+      const current = path.join(currentHome, DATA_DIR_NAME);
+      fs.mkdirSync(path.join(current, "files", "bot"), { recursive: true });
+      fs.writeFileSync(path.join(current, "files", "bot", "notes.md"), "notes");
+      const file = path.join(current, "files", "bot", "notes.md");
+      assert.equal(await resolveSavablePath(file, { home: currentHome, env: {} }), await fs.promises.realpath(file));
+      // A folder under an earlier name beside the current one is not where the bots' files are read from.
+      const earlier = path.join(currentHome, ".openmausbot");
+      fs.mkdirSync(path.join(earlier, "files", "bot"), { recursive: true });
+      fs.writeFileSync(path.join(earlier, "files", "bot", "old.md"), "old");
+      await assert.rejects(resolveSavablePath(path.join(earlier, "files", "bot", "old.md"), { home: currentHome, env: {} }), {
+        message: "Only files created by your bots can be saved",
+      });
+    } finally {
+      fs.rmSync(currentHome, { recursive: true, force: true });
+    }
   });
 
   it("rejects a symlink inside the bot home pointing outside it", { skip: !canSymlink }, async () => {
     const escape = path.join(botHome, "escape.txt");
     fs.symlinkSync(path.join(home, "secret.txt"), escape);
-    await assert.rejects(resolveSavablePath(escape, { home }), {
+    await assert.rejects(resolveSavablePath(escape, { home, env: {} }), {
       message: "Only files created by your bots can be saved",
     });
     fs.rmSync(escape);
   });
 
   it("rejects empty, relative, and non-file targets", async () => {
-    await assert.rejects(resolveSavablePath("", { home }), { message: "A file path is required" });
-    await assert.rejects(resolveSavablePath("workspaces/bot/report.docx", { home }), { message: "That file path is invalid" });
-    await assert.rejects(resolveSavablePath(path.join(botHome, "nope.docx"), { home }), { message: "That file no longer exists" });
-    await assert.rejects(resolveSavablePath(path.join(botHome, "workspaces"), { home }), { message: "That path is not a file" });
+    await assert.rejects(resolveSavablePath("", { home, env: {} }), { message: "A file path is required" });
+    await assert.rejects(resolveSavablePath("workspaces/bot/report.docx", { home, env: {} }), { message: "That file path is invalid" });
+    await assert.rejects(resolveSavablePath(path.join(botHome, "nope.docx"), { home, env: {} }), { message: "That file no longer exists" });
+    await assert.rejects(resolveSavablePath(path.join(botHome, "workspaces"), { home, env: {} }), { message: "That path is not a file" });
   });
 });
 
@@ -168,7 +191,7 @@ describe("save-file source handles", () => {
   it("copies from the validated open handle", async () => {
     const source = path.join(botHome, "workspaces", "bot", "report.docx");
     const destination = path.join(home, "copied-report.docx");
-    await withSavableFile(source, { home }, ({ copyTo }) => copyTo(destination));
+    await withSavableFile(source, { home, env: {} }, ({ copyTo }) => copyTo(destination));
     assert.equal(fs.readFileSync(destination, "utf8"), "docx");
     fs.rmSync(destination);
   });
@@ -177,7 +200,7 @@ describe("save-file source handles", () => {
     const source = path.join(botHome, "workspaces", "bot", "report.docx");
     const moved = `${source}.moved`;
     const destination = path.join(home, "swapped-report.docx");
-    await withSavableFile(source, { home }, async ({ copyTo }) => {
+    await withSavableFile(source, { home, env: {} }, async ({ copyTo }) => {
       fs.renameSync(source, moved);
       fs.symlinkSync(path.join(home, "secret.txt"), source);
       await copyTo(destination);
@@ -215,7 +238,7 @@ describe("save-file source handles", () => {
     };
 
     await assert.rejects(
-      withSavableFile(source, { home, fsp, platform: "win32" }, async () => {}),
+      withSavableFile(source, { home, fsp, platform: "win32", env: {} }, async () => {}),
       { message: "That file changed while it was being opened" },
     );
     assert.equal(closed, true);
@@ -400,7 +423,7 @@ describe("openLogsFolder", () => {
   it("opens exactly main's own logs folder, making it first, and says where it is when the system cannot open it", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "omb-logs-folder-"));
     try {
-      const folder = path.join(root, "OpenMausBot", "logs");
+      const folder = path.join(root, "TappoTeamBot", "logs");
       const opened = [];
       assert.deepEqual(await openLogsFolder(folder, { open: async (target) => { opened.push(target); return ""; } }), { folder, opened: true });
       assert.deepEqual(opened, [folder]);

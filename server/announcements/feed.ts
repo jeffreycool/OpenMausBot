@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import bundledFeedJson from "../../announcements/announcements.json" with { type: "json" };
-import { ANNOUNCEMENTS_URL, liveCards, parseAnnouncementFeed, type AnnouncementCard, type AnnouncementFeed } from "../../shared/announcements.ts";
+import { ANNOUNCEMENTS_URL, liveCards, parseAnnouncementFeed, UPSTREAM_ANNOUNCEMENTS_ENABLED, type AnnouncementCard, type AnnouncementFeed } from "../../shared/announcements.ts";
 import { writeFileAtomic } from "../atomic.ts";
 import { DATA_DIR } from "../config.ts";
 
@@ -67,8 +67,10 @@ export class AnnouncementStore {
     (this.options.log ?? ((line: string) => console.warn(line)))(`[announcements] ${text}`);
   }
 
+  /** "1" stops the download and every remote card on this server's pages, the bundled ones included. The fork's own
+   * switch (shared/announcements.ts UPSTREAM_ANNOUNCEMENTS_ENABLED) does the same for good: nothing is fetched, read or kept. */
   get disabled(): boolean {
-    return (this.options.env ?? process.env)[ANNOUNCEMENTS_DISABLE_ENV] === "1";
+    return !UPSTREAM_ANNOUNCEMENTS_ENABLED || (this.options.env ?? process.env)[ANNOUNCEMENTS_DISABLE_ENV] === "1";
   }
 
   /** The newest usable copy. Reads the disk cache once and never waits on the network. */

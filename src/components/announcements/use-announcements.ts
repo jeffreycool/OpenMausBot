@@ -11,6 +11,7 @@ import { activeLocale } from "@/lib/i18n";
 import { modelgoOfferable } from "@/lib/modelgo-offer";
 import { usedBefore } from "@/lib/notices";
 import type { WelcomeViewer } from "@/lib/onboarding";
+import { UPSTREAM_ANNOUNCEMENTS_ENABLED } from "../../../shared/announcements";
 import { useStore } from "@/state/store";
 import { useDesktopNotices } from "../desktop-notices";
 import { localDesktopPage, useWelcomeViewer } from "../onboarding/WelcomeGate";
@@ -85,7 +86,7 @@ export function useAnnouncements(now: () => number = Date.now): Announcements {
       conditions: announcementConditions(state) },
     branded, admin: canSave, sponsors: !providersRestricted(state.config?.managedPolicy) && sponsors,
   });
-  const items = announcementHistory({ facts, cards, feedUpdatedAt: announcementFeedUpdatedAt(), now: now() });
+  const items = UPSTREAM_ANNOUNCEMENTS_ENABLED ? announcementHistory({ facts, cards, feedUpdatedAt: announcementFeedUpdatedAt(), now: now() }) : [];
   const record = state.config?.onboarding;
   const person: PersonRecord = { record, desktopSeen: desktopState?.seen ?? [] };
   const ready = viewer !== null && organization !== null && (!desktop || desktopState !== null) && state.config !== null;

@@ -6,6 +6,10 @@ import type { CompanionAccountState } from "../types/ogb";
 import { companionPairingRoute, type CompanionPairingRouteSource } from "./companion-pairing";
 import type { CompanionState } from "./companion-types";
 import { t } from "./i18n";
+import { UPSTREAM_NAME } from "./brand";
+
+/** The account service and the Relay are upstream's: this fork signs in to them and uses them, and never runs them. */
+const UPSTREAM = { app: UPSTREAM_NAME };
 
 export type RemoteAccessStepId = "computer" | "account" | "relay" | "route";
 export type RemoteAccessStepResult = "ok" | "failed" | "unchecked";
@@ -51,11 +55,11 @@ const known = (value: unknown, words: ReadonlySet<string>): string | null => (ty
 function accountProblem(problem: string | null): Problem {
   switch (problem) {
     case "unreachable":
-      return { reason: t("remote.diagnosis.account.unreachable"), next: [t("remote.diagnosis.next.internet")] };
+      return { reason: t("remote.diagnosis.account.unreachable", UPSTREAM), next: [t("remote.diagnosis.next.internet")] };
     case "sign_in":
       return { reason: t("remote.diagnosis.account.expired"), next: [t("remote.diagnosis.next.signIn")] };
     case "busy":
-      return { reason: t("remote.diagnosis.account.busy"), next: [t("remote.diagnosis.next.wait")] };
+      return { reason: t("remote.diagnosis.account.busy", UPSTREAM), next: [t("remote.diagnosis.next.wait")] };
     case "limit":
       return { reason: t("remote.diagnosis.account.limit"), next: [t("remote.diagnosis.next.removeComputer")] };
     case "update":
@@ -76,7 +80,7 @@ interface Evaluated {
 function computerStep(companion: RemoteAccessFacts["companion"]): Evaluated {
   if (!companion) return { result: "unchecked", reason: t("remote.diagnosis.notChecked") };
   if (companion.error) return { result: "failed", reason: t("remote.diagnosis.computer.failed"), next: [t("remote.diagnosis.next.restart")] };
-  if (!companion.enabled) return { result: "failed", reason: t("remote.diagnosis.computer.off"), next: [t("remote.diagnosis.next.turnOn")] };
+  if (!companion.enabled) return { result: "failed", reason: t("remote.diagnosis.computer.off"), next: [t("remote.diagnosis.next.turnOn", UPSTREAM)] };
   return { result: "ok", reason: t("remote.diagnosis.computer.on") };
 }
 
@@ -107,7 +111,7 @@ function relayStep(facts: RemoteAccessFacts, accountResult: RemoteAccessStepResu
   if (!companion || companion.routes?.relay?.on !== true) return { result: "unchecked", reason: t("remote.diagnosis.relay.off") };
   const e2e = companion.e2e;
   if (e2e?.enabled === true && e2e.relay === "connected") return { result: "ok", reason: t("remote.diagnosis.relay.connected") };
-  if (accountResult === "failed") return { result: "unchecked", reason: t("remote.diagnosis.relay.needsAccount") };
+  if (accountResult === "failed") return { result: "unchecked", reason: t("remote.diagnosis.relay.needsAccount", UPSTREAM) };
   if (e2e?.relayProblem === "replaced") {
     return { result: "failed", reason: t("remote.diagnosis.relay.replaced"), next: [t("remote.diagnosis.next.otherCopy")] };
   }
@@ -116,24 +120,24 @@ function relayStep(facts: RemoteAccessFacts, accountResult: RemoteAccessStepResu
   if (token?.state === "off") return { result: "unchecked", reason: t("remote.diagnosis.relay.idle") };
   if (token?.state === "failed") {
     if (tokenCode === "unavailable") {
-      return { result: "failed", reason: t("remote.diagnosis.relay.unavailable"), next: [t("remote.diagnosis.next.useWifi")] };
+      return { result: "failed", reason: t("remote.diagnosis.relay.unavailable", UPSTREAM), next: [t("remote.diagnosis.next.useWifi")] };
     }
     if (tokenCode === "busy") {
-      return { result: "failed", reason: t("remote.diagnosis.relay.busy"), next: [t("remote.diagnosis.next.wait")] };
+      return { result: "failed", reason: t("remote.diagnosis.relay.busy", UPSTREAM), next: [t("remote.diagnosis.next.wait")] };
     }
     if (tokenCode === "unreachable") {
-      return { result: "failed", reason: t("remote.diagnosis.account.unreachable"), next: [t("remote.diagnosis.next.internet")] };
+      return { result: "failed", reason: t("remote.diagnosis.account.unreachable", UPSTREAM), next: [t("remote.diagnosis.next.internet")] };
     }
     return { result: "failed", reason: t("remote.diagnosis.relay.noAccess"), next: [t("remote.diagnosis.next.wait"), t("remote.diagnosis.next.support")] };
   }
   if (e2e?.enabled !== true || token?.state === "fetching") return { result: "unchecked", reason: t("remote.diagnosis.connecting") };
   switch (e2e.relayProblem) {
     case "no_answer":
-      return { result: "failed", reason: t("remote.diagnosis.relay.noAnswer"), next: [t("remote.diagnosis.next.internet"), t("remote.diagnosis.next.vpn")] };
+      return { result: "failed", reason: t("remote.diagnosis.relay.noAnswer", UPSTREAM), next: [t("remote.diagnosis.next.internet"), t("remote.diagnosis.next.vpn", UPSTREAM)] };
     case "unreachable":
-      return { result: "failed", reason: t("remote.diagnosis.relay.unreachable"), next: [t("remote.diagnosis.next.internet"), t("remote.diagnosis.next.vpn")] };
+      return { result: "failed", reason: t("remote.diagnosis.relay.unreachable", UPSTREAM), next: [t("remote.diagnosis.next.internet"), t("remote.diagnosis.next.vpn", UPSTREAM)] };
     case "busy":
-      return { result: "failed", reason: t("remote.diagnosis.relay.busy"), next: [t("remote.diagnosis.next.wait")] };
+      return { result: "failed", reason: t("remote.diagnosis.relay.busy", UPSTREAM), next: [t("remote.diagnosis.next.wait")] };
     default:
       return { result: "unchecked", reason: t("remote.diagnosis.connecting") };
   }
@@ -155,7 +159,7 @@ function routeStep(facts: RemoteAccessFacts, relay: RemoteAccessStepResult): Eva
       ? { result: "unchecked", reason: t("remote.diagnosis.connecting") }
       : { result: "failed", reason: t("remote.diagnosis.route.none"), next: [t("remote.diagnosis.next.useWifi")] };
   }
-  return { result: "failed", reason: t("remote.diagnosis.route.off"), next: [t("remote.diagnosis.next.turnOn")] };
+  return { result: "failed", reason: t("remote.diagnosis.route.off"), next: [t("remote.diagnosis.next.turnOn", UPSTREAM)] };
 }
 
 const ROUTES = ["wifi", "relay", "tailscale", "https"] as const;
@@ -199,8 +203,8 @@ export function diagnoseRemoteAccess(facts: RemoteAccessFacts): RemoteAccessDiag
   const route = routeStep(facts, relay.result);
   const evaluated: Array<[RemoteAccessStepId, string, Evaluated]> = [
     ["computer", t("remote.diagnosis.step.computer"), computer],
-    ["account", t("remote.diagnosis.step.account"), account],
-    ["relay", t("remote.diagnosis.step.relay"), relay],
+    ["account", t("remote.diagnosis.step.account", UPSTREAM), account],
+    ["relay", t("remote.diagnosis.step.relay", UPSTREAM), relay],
     ["route", t("remote.diagnosis.step.route"), route],
   ];
   const steps = evaluated.map(([id, label, step]): RemoteAccessStep => ({ id, label, result: step.result, reason: step.reason }));

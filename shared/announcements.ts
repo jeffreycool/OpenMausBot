@@ -13,6 +13,10 @@ import { z } from "zod";
 export const ANNOUNCEMENTS_FILE = "announcements/announcements.json";
 export const ANNOUNCEMENTS_SCHEMA_FILE = "announcements/announcements.schema.json";
 export const ANNOUNCEMENTS_URL = `https://raw.githubusercontent.com/milind-soni/OpenMausBot/main/${ANNOUNCEMENTS_FILE}`;
+/** agentchat fork 本地改动：本 fork 团队自托管，不接收上游借公告文件推来的卡片。为 false 时服务端不请求上面的地址（server/announcements/feed.ts
+ * 直接交出空列表，不读缓存、不刷新），前端不问、不画卡片、侧栏没有公告入口和新公告标记；上游的解析代码保留（上游 merge 时删除本常量并还原
+ * 用到它的判定，见 agentchat/README.md「品牌重命名」登记表）。 */
+export const UPSTREAM_ANNOUNCEMENTS_ENABLED = false;
 /** Pictures: files in the repository's announcements/ folder on main, as raw.githubusercontent.com serves them. */
 export const ANNOUNCEMENT_IMAGE_PREFIX = "https://raw.githubusercontent.com/milind-soni/OpenMausBot/main/announcements/";
 
