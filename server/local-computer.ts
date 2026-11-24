@@ -50,9 +50,19 @@ export function gatedLocalComputer(
 }
 
 /** This computer's bridge also answers file tools (host-file-tools.ts); the person's approval level gates each call. */
-export function withHostFiles<T extends { env: Record<string, string>; scope?: "local-computer"; platform?: LocalComputerConnection["platform"] }>(connection: T): T {
+export function withHostFiles<T extends { env: Record<string, string>; scope?: "local-computer"; platform?: LocalComputerConnection["platform"] }>(
+  connection: T,
+  writableDirs?: readonly string[],
+): T {
   if (connection.scope !== "local-computer" || !connection.env.OMB_CUA_COMMAND || !connection.platform) return connection;
-  return { ...connection, env: { ...connection.env, OMB_HOST_FILES: "1" } };
+  return {
+    ...connection,
+    env: {
+      ...connection.env,
+      OMB_HOST_FILES: "1",
+      ...(writableDirs?.length ? { OMB_HOST_WRITABLE_DIRS: JSON.stringify(writableDirs) } : {}),
+    },
+  };
 }
 
 type LegacyConnectionDescriptor = {

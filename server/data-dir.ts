@@ -1,6 +1,15 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { lstatSync, mkdtempSync } from "node:fs";
 import { homedir, tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
+
+function pathPresent(target: string): boolean {
+  try {
+    lstatSync(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 let resolvedHome: string | undefined;
 
@@ -38,10 +47,10 @@ function legacyName(home: string, dir: string): string | null {
  */
 export function defaultDataDir(home: string): ResolvedDataDir {
   const current = join(home, DATA_DIR_NAME);
-  if (existsSync(current)) return { dir: current, legacy: null };
+  if (pathPresent(current)) return { dir: current, legacy: null };
   for (const name of LEGACY_DATA_DIR_NAMES) {
     const legacy = join(home, name);
-    if (existsSync(legacy)) return { dir: legacy, legacy };
+    if (pathPresent(legacy)) return { dir: legacy, legacy };
   }
   return { dir: current, legacy: null };
 }
@@ -50,7 +59,7 @@ export function defaultDataDir(home: string): ResolvedDataDir {
  * elsewhere, and a move cannot merge two data folders, so a person is told they are there rather than left to find an
  * empty app. Reads only. */
 export function unusedEarlierDataDirs(home: string, inUse: string): string[] {
-  return LEGACY_DATA_DIR_NAMES.map((name) => join(home, name)).filter((path) => path !== inUse && existsSync(path));
+  return LEGACY_DATA_DIR_NAMES.map((name) => join(home, name)).filter((path) => path !== inUse && pathPresent(path));
 }
 
 const quoted = (value: string): string => `'${value.replaceAll("'", `'\\''`)}'`;

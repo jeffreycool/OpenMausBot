@@ -195,3 +195,27 @@ agentChat integration module for this fork. **Additive-only**: everything agentC
 ### 已知基线问题（非本分支引入，merge 时留意）
 
 `scripts/testing/file-size-ratchet.test.ts` 在 `agentchat-integration` 基线即为红：`electron/main.mjs`（3139>3135）、`packages/phone-protocol/src/wire.ts`（1010 未登记）、`server/drivers/claude.ts`（2113>2069）、`server/drivers/codex.ts`（1770>1718）、`server/index.ts`（15401>15394）、`src/components/Sidebar.tsx`（1691>1674）、`src/state/store.tsx`（3289>3288）。本分支对这些钉死文件全部净零行（GroupView 1186、store.tsx 3289、Sidebar 1691 不变；Composer 996<1000）。
+
+---
+
+## 补登：历史遗漏偏离与 2026-11-24 安全/品牌修复（`rename-tappo` 分支）
+
+### 历史遗漏的上游文件本地改动补登
+
+| 文件 | 改动 | 原因 | 上游 merge 时 |
+|---|---|---|---|
+| `electron/cua.mjs` + `scripts/prepare-cua-win.mjs` | Windows CUA 解压改用 `System32\tar.exe`（bsdtar）并清理 staging 路径 | 解决 Windows 上 `Expand-Archive` 失败/路径兼容性问题 | 保留 |
+| `server/drivers/native.ts` + `server/thread-log-rotation.ts` + `server/bus.ts` + `server/status.ts` | native tee 日志与轮转异步化，避免引擎 turn 期间同步 IO 阻塞主事件循环 | 高流量下 HTTP 接口挂死根因修复 | 按函数锚保留 |
+| `src/locales/pt-br.json` | 随双语文案新增同步占位/翻译键 | 本地化校验管线完整性 | 按键合并 |
+
+### 2026-11-24 全面审计安全与品牌加固登记
+
+| 文件 | 改动 | 原因 | 上游 merge 时 |
+|---|---|---|---|
+| `server/drivers/codex.ts` | `rootExplainedByRequest` 移除反向祖先判定（仅允许 `seen` 在请求 `target` 之内） | 修复受限目录白名单反向绕过风险 | 按函数锚保留 |
+| `server/bot-dir-access.ts` + `server/drivers/claude-bot-settings.ts` + `server/drivers/claude.ts` | 新增 `isDirWithin`（含 symlink 归一化）；`DIR_ACCESS_WRITE_TOOLS` 扩至 `Bash`/`PowerShell`/`*`；受限 turn 读取并清洗 `cwd/.claude/settings.json` 且设置 `--setting-sources ""` | 堵住 Claude CLI 写工具与本地 settings 逃逸 | 保留；`claude.ts` 保持行数不超 ratchet |
+| `server/host-file-tools.ts` + `server/local-computer.ts` + `server/local-computer-proxy.ts` + `server/drivers/chat-mcp-tools.ts` + `server/drivers/openai-chat.ts` | 主机文件工具写操作（`write_file`/`make_folder`）注入 `OMB_HOST_WRITABLE_DIRS` 并做 realpath 写边界校验，读操作保持开放 | 修复 chat 引擎主机文件写工具无目录限制问题 | 按参数注入点保留 |
+| `server/workspace.ts` + `server/index.ts` | 导出 `writeBoundaryPrompt` 并在 `{ id: "files" }` 区块注入；修复 `updateChannel` 在 `audience !== undefined` 时触发 `audienceChanged()` | 补齐 files prompt 边界提示与房间受众热更新通知 | `index.ts` 保持净零行 |
+| `server/data-dir.ts` + `server/data-dir-migration.ts` | 使用 `lstatSync` 拒绝软链源目录并识别悬空目标；迁移全程加排他 lockfile；Windows 优先 `System32\tar.exe`；修复失败打印明确告警 | 防止迁移期竞态、软链劫持与静默误判 | 保留 |
+| `electron/local-secret-cipher.mjs` | 修复空串明文长度校验 `<`、`!existing.isFile()` 校验与宽松权限自动收敛 `0o600` | 修复空凭证加密/读入与密钥文件权限加固 | 保留（fork-only） |
+| `electron-builder.yml` + `scripts/check-tappo-brand.mjs` | 6 处 macOS `NS*UsageDescription` 与 `linux.vendor` 改为 `TappoTeamBot`；品牌守卫增检 `publish.owner` / 禁自动更新 / 隐藏云计费常量 | 防止上游 merge 时静默还原品牌或恢复自动更新 | 保留 |

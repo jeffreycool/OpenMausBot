@@ -15,6 +15,7 @@ const {
   OMB_CONTROL_TOKEN: token,
   OMB_COMPUTER_JOURNAL: journal,
   OMB_HOST_FILES: hostFiles,
+  OMB_HOST_WRITABLE_DIRS: hostWritableDirs,
   ...childEnv
 } = process.env;
 
@@ -34,8 +35,19 @@ try {
   process.exit(2);
 }
 
+let parsedWritableDirs: string[] | undefined;
+if (hostWritableDirs) {
+  try {
+    const raw = JSON.parse(hostWritableDirs) as unknown;
+    if (Array.isArray(raw) && raw.every((d): d is string => typeof d === "string")) parsedWritableDirs = raw;
+  } catch {
+    process.stderr.write("invalid local computer writable dirs\n");
+    process.exit(2);
+  }
+}
+
 const screenRelay = localComputerRelay(platform ?? process.platform);
-const fileRelay = hostFiles === "1" ? hostFileRelay(homedir()) : null;
+const fileRelay = hostFiles === "1" ? hostFileRelay(homedir(), parsedWritableDirs) : null;
 
 runMcpBridge({
   command: command!,

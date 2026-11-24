@@ -3,7 +3,7 @@
 // (codex: OS sandbox, claude: permission system, chat drivers: prompt only).
 import { realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { z } from "zod";
 
@@ -59,6 +59,14 @@ function normalizedDir(path: string): string {
   } catch {
   }
   return absolute;
+}
+
+/** True when `candidate` (resolved relative to `baseCwd`) sits inside `root` after symlink normalization. */
+export function isDirWithin(root: string, candidate: string, baseCwd?: string): boolean {
+  const realRoot = normalizedDir(root);
+  const realCandidate = normalizedDir(baseCwd ? resolve(baseCwd, candidate) : resolve(candidate));
+  const inside = relative(realRoot, realCandidate);
+  return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
 }
 
 /** The directories a turn may write, or null when this bot is unrestricted. A restricted bot's own workspace folders and

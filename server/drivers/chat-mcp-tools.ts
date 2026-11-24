@@ -945,6 +945,6 @@ export async function mountChatTools(integrations: SendTurnInput["integrations"]
 }
 
 /** A chat runtime has no file tools of its own, so on this desktop's own computer its bridge answers them (host-file-tools.ts). */
-export function withHostFileTools(integrations: SendTurnInput["integrations"]): SendTurnInput["integrations"] {
-  return integrations?.localComputer ? { ...integrations, localComputer: withHostFiles(integrations.localComputer) } : integrations;
+export function withHostFileTools(integrations: SendTurnInput["integrations"], writableDirs?: readonly string[]): SendTurnInput["integrations"] {
+  return integrations?.localComputer ? { ...integrations, localComputer: withHostFiles(integrations.localComputer, writableDirs) } : integrations;
 }

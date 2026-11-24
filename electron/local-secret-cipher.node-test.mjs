@@ -153,3 +153,15 @@ test("off macOS the legacy adapter passes through untouched", async () => {
   assert.equal(decrypted, "value", "the raw legacy shape is returned unchanged");
   assert.equal(fs.existsSync(path.join(dir, "local-secret.key")), false, "no local key is created");
 });
+
+test("opens empty-string ciphertext and tightens existing permissive key permissions to 0600", () => {
+  const dir = room(), keyFile = path.join(dir, "local-secret.key");
+  const key = Buffer.alloc(32, 5);
+  assert.equal(openWithLocalKey(key, sealWithLocalKey(key, "")), "");
+  fs.writeFileSync(keyFile, key, { mode: 0o644 });
+  fs.chmodSync(keyFile, 0o644);
+  assert.deepEqual(readOrCreateLocalKey(keyFile), key);
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(keyFile).mode & 0o777, 0o600);
+  }
+});

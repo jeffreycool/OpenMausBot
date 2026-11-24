@@ -120,6 +120,13 @@ describe("CodexDriver directory allowlist (fake app-server)", () => {
     await recorder.until((event) => event.type === "turn.completed");
     const refused = recorder.events.find((event) => event.type === "runtime.error") as { message: string } | undefined;
     expect(refused?.message).toContain("beyond this turn's allowlist");
+
+    // A reported root that is an ancestor of a requested root (e.g. $HOME / scratch) must also be refused.
+    await create({ FAKE_CODEX_RESOLVED_SANDBOX: JSON.stringify({ type: "workspaceWrite", writableRoots: [scratch] }) });
+    const ancestorTurn = await instance.adapter.sendTurn({ threadId: "t-beyond-ancestor", text: "Fixture", approvalMode: "ask", writableDirs: requested });
+    await recorder.until((event) => event.type === "turn.completed" && event.turnId === ancestorTurn.turnId);
+    const refusedAncestor = recorder.events.filter((event) => event.type === "runtime.error").at(-1) as { message: string } | undefined;
+    expect(refusedAncestor?.message).toContain("beyond this turn's allowlist");
   });
 
   it("leaves an unrestricted Full turn at danger-full-access", async () => {

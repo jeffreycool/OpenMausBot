@@ -106,20 +106,50 @@ async function readFile(home: string, args: Record<string, unknown>): Promise<Re
 
 const alreadyThere = (target: string) => new Mistake(`${target} already exists. To replace it, call write_file again with overwrite: true.`);
 
-async function writeFile(home: string, args: Record<string, unknown>): Promise<Result> {
+async function realishPath(targetPath: string): Promise<string> {
+  const abs = path.resolve(targetPath);
+  const tail: string[] = [];
+  let cursor = abs;
+  for (;;) {
+    try {
+      const real = await fs.realpath(cursor);
+      return tail.length ? path.join(real, ...tail.reverse()) : real;
+    } catch {
+      const parent = path.dirname(cursor);
+      if (parent === cursor) return abs;
+      tail.push(path.basename(cursor));
+      cursor = parent;
+    }
+  }
+}
+
+async function assertWritablePath(targetPath: string, writableDirs?: readonly string[]): Promise<void> {
+  if (!writableDirs?.length) return;
+  const resolvedTarget = await realishPath(targetPath);
+  const allowedRoots = await Promise.all(writableDirs.map((dir) => realishPath(dir)));
+  const ok = allowedRoots.some((root) => resolvedTarget === root || resolvedTarget.startsWith(root.endsWith(path.sep) ? root : root + path.sep));
+  if (!ok) {
+    throw new Mistake(`Write outside allowed directories refused: ${resolvedTarget} is not inside ${JSON.stringify(writableDirs)}.`);
+  }
+}
+
+async function writeFile(home: string, args: Record<string, unknown>, writableDirs?: readonly string[]): Promise<Result> {
   const as = wanted(args.encoding);
   if (typeof args.content !== "string") throw new Mistake("Give the file's content.");
   if (args.overwrite !== undefined && typeof args.overwrite !== "boolean") throw new Mistake("overwrite is true or false.");
   const data = Buffer.from(args.content, as);
   if (data.length > HOST_FILE_WRITE_LIMIT) throw new Mistake("Files up to 25 MB can be saved.");
   const asked = fullPath(home, args.path);
+  await assertWritablePath(asked, writableDirs);
   await fs.mkdir(path.dirname(asked), { recursive: true });
   const named = path.join(await fs.realpath(path.dirname(asked)), path.basename(asked));
+  await assertWritablePath(named, writableDirs);
   const existing = await fs.stat(named).catch(() => null);
   if (existing?.isDirectory()) throw new Mistake(`${named} is a folder. Give a file name inside it.`);
   if (existing && args.overwrite !== true) throw alreadyThere(named);
   // A link is followed: the file it points at is the one replaced.
   const target = existing ? await fs.realpath(named) : named;
+  await assertWritablePath(target, writableDirs);
   // A temp file beside it, then a rename: a reader sees the whole old file or the whole new one.
   const temp = path.join(path.dirname(target), `.${path.basename(target)}.${randomUUID().slice(0, 8)}.tmp`);
   try {
@@ -166,8 +196,9 @@ async function renameWithRetry(from: string, to: string): Promise<void> {
   }
 }
 
-async function makeFolder(home: string, args: Record<string, unknown>): Promise<Result> {
+async function makeFolder(home: string, args: Record<string, unknown>, writableDirs?: readonly string[]): Promise<Result> {
   const asked = fullPath(home, args.path);
+  await assertWritablePath(asked, writableDirs);
   const existing = await fs.stat(asked).catch(() => null);
   if (existing && !existing.isDirectory()) return refused(`${asked} is a file, not a folder.`);
   await fs.mkdir(asked, { recursive: true });
@@ -178,10 +209,12 @@ async function makeFolder(home: string, args: Record<string, unknown>): Promise<
 const RUN = { list_files: listFiles, read_file: readFile, write_file: writeFile, make_folder: makeFolder } as const;
 
 /** The bridge's relay for these tools: null for any other call. Failures come back as the OS worded them. */
-export function hostFileRelay(home: string): (call: ToolCall) => Promise<Result> | null {
+export function hostFileRelay(home: string, writableDirs?: readonly string[]): (call: ToolCall) => Promise<Result> | null {
   return (call) => {
     if (!HOST_FILE_TOOL_NAMES.has(call.name)) return null;
-    return RUN[call.name as keyof typeof RUN](home, call.arguments)
+    if (call.name === "write_file") return writeFile(home, call.arguments, writableDirs).catch((error: unknown) => refused(error instanceof Error ? error.message : String(error)));
+    if (call.name === "make_folder") return makeFolder(home, call.arguments, writableDirs).catch((error: unknown) => refused(error instanceof Error ? error.message : String(error)));
+    return RUN[call.name as "list_files" | "read_file"](home, call.arguments)
       .catch((error: unknown) => refused(error instanceof Error ? error.message : String(error)));
   };
 }

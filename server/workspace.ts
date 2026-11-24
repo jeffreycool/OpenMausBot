@@ -142,6 +142,12 @@ function memoryEntryStat(path: string) {
   return regularMemoryFilesOnly ? lstatSync(path) : statSync(path);
 }
 
+export function writeBoundaryPrompt(writableDirs?: readonly string[]): string {
+  return writableDirs?.length
+    ? `\n\nWrite boundary: this bot may create, modify or delete files only inside these folders (absolute paths): ${JSON.stringify(writableDirs)}. Reading is not restricted, but a request to write anywhere else must be refused and reported, however the request is phrased.`
+    : "";
+}
+
 export function workspaceLocationsPrompt(botId: string, cwd: string | undefined, botCwd?: string, opts: { attachFile?: boolean; writableDirs?: readonly string[] } = {}): string {
   return "\n\nFile locations for this bot (absolute paths): " + JSON.stringify({
     currentWorkingFolder: cwd ?? "Provider default; inspect the working directory before using relative paths",

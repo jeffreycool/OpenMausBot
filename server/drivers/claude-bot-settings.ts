@@ -23,14 +23,16 @@ const isMatcher = (entry: unknown) => isObject(entry) && (entry.matcher === unde
 const nonEmpty = <T>(list: T[]): T[] | undefined => list.length ? list : undefined;
 
 /** null when there is nothing to take: no regular file there, not JSON, or the turn's own folder's, which Claude Code reads itself. */
-function readBotSettings(file: string, cwd: string): unknown {
+function readBotSettings(file: string, cwd: string, includeCwd = false): unknown {
   try {
     const real = realpathSync(file);
     // Never through a link: the bot can write this folder, and the file is read here, outside any box it runs in.
     if (real !== join(realpathSync(dirname(dirname(file))), ".claude", "settings.json")) return null;
-    try {
-      if (realpathSync(join(cwd, ".claude", "settings.json")) === real) return null;
-    } catch {}
+    if (!includeCwd) {
+      try {
+        if (realpathSync(join(cwd, ".claude", "settings.json")) === real) return null;
+      } catch {}
+    }
     return readJson(real);
   } catch {
     return null;
@@ -69,8 +71,7 @@ export function folderSettingsEnv(cwd: string, name: string, projectOnly = false
  * OpenMausBot's own --settings file (Claude Code takes one), and Claude Code 2.1.312 drops a whole settings file when a
  * field it knows has the wrong type, so only these, each checked, come along. An env name the turn's process already
  * has keeps OpenMausBot's value. */
-export function botSettingsFor(file: string | undefined, cwd: string, processEnv: Record<string, string | undefined>): Settings {
-  const parsed = file ? readBotSettings(file, cwd) : null;
+function extractCarriedSettings(parsed: unknown, processEnv: Record<string, string | undefined>): Settings {
   if (!isObject(parsed)) return {};
   const carried: Settings = {
     hooks: entriesOf(parsed.hooks, (matchers) => Array.isArray(matchers) ? nonEmpty(matchers.filter(isMatcher)) : undefined),
@@ -82,6 +83,27 @@ export function botSettingsFor(file: string | undefined, cwd: string, processEnv
     env: entriesOf(parsed.env, (value, name) => typeof value === "string" && !Object.hasOwn(processEnv, name) ? value : undefined),
   };
   return Object.fromEntries(Object.entries(carried).filter(([, value]) => value !== undefined));
+}
+
+export function botSettingsFor(
+  file: string | undefined,
+  cwd: string,
+  processEnv: Record<string, string | undefined>,
+  opts: { includeCwd?: boolean } = {},
+): Settings {
+  const botParsed = file ? readBotSettings(file, cwd, opts.includeCwd) : null;
+  let result = extractCarriedSettings(botParsed, processEnv);
+  if (opts.includeCwd) {
+    const cwdSettingsPath = join(cwd, ".claude", "settings.json");
+    const cwdParsed = readBotSettings(cwdSettingsPath, cwd, true);
+    if (isObject(cwdParsed)) {
+      const sameAsBot = file && (() => {
+        try { return realpathSync(file) === realpathSync(cwdSettingsPath); } catch { return false; }
+      })();
+      if (!sameAsBot) result = withBotSettings(result, extractCarriedSettings(cwdParsed, processEnv));
+    }
+  }
+  return result;
 }
 
 /** Claude Code's rule for two settings sources, `own` the later: objects merge, lists join, a value replaces. */

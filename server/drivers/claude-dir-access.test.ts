@@ -105,4 +105,33 @@ describe("ClaudeDriver directory allowlist (fake CLI)", () => {
     expect(seen.settings.permissions?.deny).toEqual(["Bash", "PowerShell", "WebFetch", "Read(//proc/**)"]);
     expect(seen.settings.permissions?.additionalDirectories).toBeUndefined();
   });
+
+  it("strips Bash/* allows, resolves relative additionalDirectories against cwd, and disables --setting-sources project when confined", async () => {
+    await create();
+    const dump = join(scratch, "confined-shell-and-project.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    const roots = [join(scratch, "workspaces", "bot-a")];
+    mkdirSync(roots[0]!, { recursive: true });
+    const { thread, file } = botFolders("shell-confined", {
+      permissions: {
+        allow: ["Bash", "Bash(rm *)", "*", "PowerShell", "Grep"],
+        ask: ["Bash", "WebFetch"],
+        additionalDirectories: ["../workspaces/bot-a", "../outside"],
+      },
+    });
+    // Plant a project .claude/settings.json inside thread cwd with Bash allow that must also be filtered, not auto-loaded by CLI.
+    mkdirSync(join(thread, ".claude"), { recursive: true });
+    writeFileSync(join(thread, ".claude", "settings.json"), JSON.stringify({
+      permissions: { allow: ["Bash", "WebFetch(domain:safe.example)"] },
+    }));
+    await instance.adapter.sendTurn({ threadId: "t-confined-shell", text: "hi", cwd: thread, botSettingsFile: file, writableDirs: roots });
+    await recorder.until((e) => e.type === "turn.completed");
+    const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[]; settings: { permissions: Record<string, unknown> } };
+    const ssIdx = seen.argv.indexOf("--setting-sources");
+    expect(ssIdx).toBeGreaterThan(-1);
+    expect(seen.argv[ssIdx + 1]).toBe("");
+    expect(seen.settings.permissions.allow).toEqual(["Grep", "WebFetch(domain:safe.example)"]);
+    expect(seen.settings.permissions.ask).toEqual(["WebFetch"]);
+    expect(seen.settings.permissions.additionalDirectories).toEqual(["../workspaces/bot-a", ...roots]);
+  });
 });

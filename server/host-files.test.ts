@@ -145,4 +145,42 @@ describe("file tools on disk", () => {
     expect(readFileSync(join(home, "Documents", "b.txt"), "utf8")).toBe("copied");
     expect(existsSync(temp)).toBe(false);
   });
+
+  it("enforces writableDirs on write_file and make_folder while leaving reads open", async () => {
+    const root = realpathSync.native(mkdtempSync(join(tmpdir(), "omb-host-files-diraccess-")));
+    made.push(root);
+    const home = join(root, "home");
+    const allowed = join(root, "allowed");
+    const outside = join(root, "outside");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(allowed, { recursive: true });
+    mkdirSync(outside, { recursive: true });
+    writeFileSync(join(outside, "readable.txt"), "ok-to-read");
+
+    const relay = hostFileRelay(home, [allowed]);
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const res = await relay({ name, arguments: args })!;
+      return { text: res.content.map((p) => p.text).join("\n"), error: res.isError === true };
+    };
+
+    expect(await call("write_file", { path: join(allowed, "sub", "ok.txt"), content: "hi" })).toEqual({
+      text: `Saved 2 bytes to ${join(allowed, "sub", "ok.txt")}.`,
+      error: false,
+    });
+    expect((await call("make_folder", { path: join(allowed, "dir-a") })).error).toBe(false);
+    expect(await call("read_file", { path: join(outside, "readable.txt") })).toEqual({
+      text: `${join(outside, "readable.txt")} (10 bytes):\nok-to-read`,
+      error: false,
+    });
+    expect((await call("write_file", { path: join(outside, "blocked.txt"), content: "no" })).error).toBe(true);
+    expect(existsSync(join(outside, "blocked.txt"))).toBe(false);
+    expect((await call("make_folder", { path: join(outside, "blocked-dir") })).error).toBe(true);
+    expect(existsSync(join(outside, "blocked-dir"))).toBe(false);
+
+    if (process.platform !== "win32") {
+      symlinkSync(outside, join(allowed, "escape-dir"));
+      expect((await call("write_file", { path: join(allowed, "escape-dir", "link.txt"), content: "no" })).error).toBe(true);
+      expect(existsSync(join(outside, "link.txt"))).toBe(false);
+    }
+  });
 });

@@ -33,7 +33,7 @@ export function sealWithLocalKey(key, plaintext, { randomBytes = nodeRandomBytes
 export function openWithLocalKey(key, buffer) {
   if (!isLocalCipherBlob(buffer)) return null;
   const body = buffer.subarray(MAGIC.length);
-  if (body.length <= IV_BYTES + TAG_BYTES) return null;
+  if (body.length < IV_BYTES + TAG_BYTES) return null;
   const iv = body.subarray(0, IV_BYTES);
   const tag = body.subarray(body.length - TAG_BYTES);
   const ciphertext = body.subarray(IV_BYTES, body.length - TAG_BYTES);
@@ -48,7 +48,7 @@ export function openWithLocalKey(key, buffer) {
 
 /** The key file is one random key shared by every local store. A symlink is refused: the stores open
  * their files with O_NOFOLLOW, and the key must never be weaker than that. */
-export function readOrCreateLocalKey(keyFile, { readFile = (f) => fs.readFileSync(f), lstatSync = fs.lstatSync, mkdirSync = fs.mkdirSync, writeFileSync = fs.writeFileSync, randomBytes = nodeRandomBytes } = {}) {
+export function readOrCreateLocalKey(keyFile, { readFile = (f) => fs.readFileSync(f), lstatSync = fs.lstatSync, chmodSync = fs.chmodSync, mkdirSync = fs.mkdirSync, writeFileSync = fs.writeFileSync, randomBytes = nodeRandomBytes } = {}) {
   let existing = null;
   try {
     existing = lstatSync(keyFile);
@@ -57,6 +57,10 @@ export function readOrCreateLocalKey(keyFile, { readFile = (f) => fs.readFileSyn
   }
   if (existing) {
     if (existing.isSymbolicLink()) throw new Error("local secret key is a symlink");
+    if (!existing.isFile()) throw new Error("local secret key is not a regular file");
+    if (process.platform !== "win32" && (existing.mode & 0o077) !== 0) {
+      chmodSync(keyFile, 0o600);
+    }
     try {
       const key = readFile(keyFile);
       if (key.length !== KEY_BYTES) throw new Error("local secret key has the wrong size");

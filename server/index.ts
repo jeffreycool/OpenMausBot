@@ -341,7 +341,7 @@ import { endHoldUnlessOn, usbPhoneOffered, usbPhoneTakeoverEnabled } from "./pho
 import { createPhoneScreenRoutes } from "./routes/phone-screen.ts";
 import {
   ensureWorkspace,
-  workspaceLocationsPrompt,
+  workspaceLocationsPrompt, writeBoundaryPrompt,
   supportsWorkspaceFiles,
   appendMemoryLog,
   memoryLogPath,
@@ -3744,7 +3744,7 @@ function updateChannel(groupId: string, value: unknown): GroupRecord {
   const explicitAudience = roomAudiencePatch(body);
   if (body.audience !== undefined) patch.audience = explicitAudience;
   const group = store.patchGroup(groupId, patch);
-  if (resetAudience) audienceChanged();
+  if (resetAudience || body.audience !== undefined) audienceChanged();
   if (!group) throw Object.assign(new Error("no such room"), { status: 404 });
   return group;
 }
@@ -8386,7 +8386,7 @@ async function beginTurn(
           cwd: liveBot?.cwd ?? bot.cwd,
           connectedApps: setupConnectedApps(bot, instance.adapter.capabilities.composioMcp === true, Boolean(integrations.composio)),
         }) },
-        { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, writableDirs: writableDirs ?? undefined }) + teamFilesHost.promptLine(bot.id) : "" },
+        { id: "files", label: "File locations", text: worksInWorkspace ? workspaceLocationsPrompt(bot.id, cwd, liveBot?.cwd ?? bot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, writableDirs: writableDirs ?? undefined }) + teamFilesHost.promptLine(bot.id) : writeBoundaryPrompt(writableDirs ?? undefined) },
         { id: "shell", label: "Long-running commands", text: worksInWorkspace ? longCommandsPrompt(computerPromptKind) : "" },
         { id: "computer", label: "Computer", text: computerPrompt(computerPromptKind) },
         { id: "team-computer", label: "Team computer", text: teamComputerPrompt(teamComputer) },
@@ -10168,7 +10168,7 @@ async function runClaimedGroupMemberTurn(
   applyAgentsBridge(threadId, integrations, cfg, bot, turnEngine(instance, providerConfigs(), registry.lastSnapshot(instance.instanceId), cwd));
   const roomSystem = buildSystemPrompt(system, store.bot(bot.id)?.soul ?? bot.soul ?? "", [
     { id: "user-profile", label: "About the user", text: userProfileSystemPrompt(teamHost.profileFor(threadId, cfg.profile)) }, { id: "people", label: "People", text: teamMessages.prompt(bot.id, threadId, Boolean(integrations.agents)) },
-    { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, writableDirs: roomWritableDirs ?? undefined }) + teamFilesHost.promptLine(bot.id) : "" },
+    { id: "files", label: "File locations", text: workspace ? workspaceLocationsPrompt(bot.id, cwd, readyBot.cwd, { attachFile: Boolean(integrations.agents) && !CLOUD_HOME && !HOSTED_WORKSPACE, writableDirs: roomWritableDirs ?? undefined }) + teamFilesHost.promptLine(bot.id) : writeBoundaryPrompt(roomWritableDirs ?? undefined) },
     { id: "shell", label: "Long-running commands", text: workspace ? longCommandsPrompt(roomComputerPromptKind) : "" },
     { id: "mcp", label: "MCP servers", text: customMcpPrompt(Object.keys(integrations.custom ?? {}), mcpServersHost.off(bot)) + teamConnections.prompt(threadId, internalGeneration, integrations) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },

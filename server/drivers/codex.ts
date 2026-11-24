@@ -212,7 +212,7 @@ function tryRealRoot(path: string): string {
 function rootExplainedByRequest(seen: string, requests: readonly string[], sep: string): boolean {
   return requests.some((request) => {
     const target = tryRealRoot(request);
-    return seen === target || seen.startsWith(target + sep) || target === seen || target.startsWith(seen + sep);
+    return seen === target || seen.startsWith(target + sep);
   });
 }
 

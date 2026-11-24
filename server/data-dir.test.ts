@@ -238,4 +238,24 @@ describe("openmausbot migrate-data", () => {
     expect(code).toBe(0);
     expect(said).toMatch(/openmausbot migrate-data/);
   });
+
+  it("refuses symlinked source or dangling symlink at target", async () => {
+    const { symlinkSync } = await import("node:fs");
+    const home = aHome();
+    const real = join(home, "real-data");
+    mkdirSync(real);
+    symlinkSync(real, join(home, ".openmausbot"));
+    expect(migrateDataDir({ home, from: join(home, ".openmausbot"), env: {} })).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/symbolic link/),
+    });
+
+    const home2 = aHome();
+    mkdirSync(join(home2, ".openmausbot"));
+    symlinkSync(join(home2, "missing-target"), join(home2, DATA_DIR_NAME));
+    expect(migrateDataDir({ home: home2, from: join(home2, ".openmausbot"), env: {} })).toMatchObject({
+      ok: false,
+      error: expect.stringMatching(/already exists/),
+    });
+  });
 });

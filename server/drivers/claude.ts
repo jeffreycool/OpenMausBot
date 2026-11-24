@@ -4,9 +4,9 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer as createNetServer } from "node:net";
 import { homedir, tmpdir } from "node:os";
-import { join, dirname, isAbsolute, normalize, relative, resolve } from "node:path";
+import { join, dirname, isAbsolute, normalize } from "node:path";
 
-import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts";
+import { DATA_DIR, stripWorkspaceCredentialEnv } from "../config.ts"; import { isDirWithin } from "../bot-dir-access.ts";
 import { openStartupModelCatalog, unconfirmedModelCatalog, writeStartupModelCache } from "../startup-model-catalog.ts";
 import { writeFileAtomicIfChanged } from "../atomic.ts";
 import { augmentedPath, findCliCandidates } from "../env-path.ts"; import { BASH_MAX_TIMEOUT_MS } from "../system-prompt.ts";
@@ -220,20 +220,20 @@ export const GUEST_CLAUDE_PERMISSIONS = {
   deny: ["Bash", "PowerShell", "WebFetch", "Read(//proc/**)"],
 } as const;
 
-const DIR_ACCESS_WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+const DIR_ACCESS_WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash", "PowerShell", "*"]);
 
 /** A bot's own settings for a restricted turn, minus everything that could widen its directory allowlist: the deep
- * merge unions arrays, so additionalDirectories outside the allowlist and file-write allow rules are dropped first.
+ * merge unions arrays, so additionalDirectories outside the allowlist and file-write/shell allow rules are dropped first.
  * Everything else (hooks, env, non-path grants like WebFetch domains) carries through unchanged. */
-export function confineBotSettings(settings: Record<string, unknown>, writableDirs?: readonly string[]): Record<string, unknown> {
+export function confineBotSettings(settings: Record<string, unknown>, writableDirs?: readonly string[], cwd?: string): Record<string, unknown> {
   if (!writableDirs?.length) return settings;
   const permissions = settings.permissions;
   if (!permissions || typeof permissions !== "object" || Array.isArray(permissions)) return settings;
   const source = permissions as Record<string, unknown>;
   const inside = (dir: unknown): boolean => typeof dir === "string" &&
-    writableDirs.some((root) => isInDir(root, dir));
+    writableDirs.some((root) => isDirWithin(root, dir, cwd));
   const dropWriteGrant = (rule: unknown): boolean => typeof rule === "string" &&
-    DIR_ACCESS_WRITE_TOOLS.has(rule.split("(", 1)[0]!.trim());
+    (rule.trim() === "*" || DIR_ACCESS_WRITE_TOOLS.has(rule.split("(", 1)[0]!.trim()));
   const next: Record<string, unknown> = { ...source };
   for (const key of ["allow", "ask"] as const) {
     const rules = source[key];
@@ -242,12 +242,6 @@ export function confineBotSettings(settings: Record<string, unknown>, writableDi
   const extra = source.additionalDirectories;
   if (Array.isArray(extra)) next.additionalDirectories = extra.filter(inside);
   return { ...settings, permissions: next };
-}
-
-/** Path containment on resolved absolute paths; relative entries resolve against the process cwd like the CLI's. */
-function isInDir(root: string, candidate: string): boolean {
-  const inside = relative(root, resolve(candidate));
-  return inside === "" || (!inside.startsWith("..") && !isAbsolute(inside));
 }
 
 export type ClaudeCliVersion = readonly [number, number, number];
@@ -1073,7 +1067,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (isolated) {
         // Without these every turn gets this machine's MCP servers, connectors, skills, hooks and CLAUDE.md (one desktop: 407 tools, ~10k tokens).
         if (!turn.mcpFromUserConfig && claudeCliSupports(turnCliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
-        if (projectSettingsOnly) args.push("--setting-sources", "project");
+        if (projectSettingsOnly) args.push("--setting-sources", !turn.guestConfined && turn.writableDirs?.length ? "" : "project");
         if (turn.userSkillsDir) args.push("--add-dir", turn.userSkillsDir);
       }
       // A directory-write allowlist is exactly the CLI's additional working directories: edits inside them
@@ -1206,10 +1200,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // Approvals and browser credentials expire at the turn boundary; native background workers and cron jobs must not outlive it.
       env.CLAUDE_CODE_DISABLE_BACKGROUND_TASKS = env.CLAUDE_CODE_DISABLE_CRON = "1";
       // Never for a guest: --restricted leaves project settings out, and a hook is a command. The MCP output limit comes after, so one the bot set there is kept.
-      const botSettings = turn.guestConfined ? {} : botSettingsFor(turn.botSettingsFile, cwd, env); limitUngatedOutput(env, mcpServers, botOwned, turn.integrations?.customResultBudgets, (botSettings.env as Record<string, unknown> | undefined)?.MAX_MCP_OUTPUT_TOKENS ?? (turn.guestConfined ? undefined : folderSettingsEnv(cwd, "MAX_MCP_OUTPUT_TOKENS", projectSettingsOnly)));
+      const botSettings = turn.guestConfined ? {} : botSettingsFor(turn.botSettingsFile, cwd, env, { includeCwd: Boolean(turn.writableDirs?.length) }); limitUngatedOutput(env, mcpServers, botOwned, turn.integrations?.customResultBudgets, (botSettings.env as Record<string, unknown> | undefined)?.MAX_MCP_OUTPUT_TOKENS ?? (turn.guestConfined ? undefined : folderSettingsEnv(cwd, "MAX_MCP_OUTPUT_TOKENS", projectSettingsOnly)));
       // The bot's own settings cannot widen the directory allowlist: additionalDirectories outside it and
       // file-write allows are dropped before the deep merge's array union could grant them.
-      const confinedSettings = turn.guestConfined ? botSettings : confineBotSettings(botSettings, turn.writableDirs);
+      const confinedSettings = turn.guestConfined ? botSettings : confineBotSettings(botSettings, turn.writableDirs, cwd);
       const settings = withBotSettings(confinedSettings, own);
       const authSettingsPath = mcpConfigPath && Object.keys(settings).length
         ? join(dirname(mcpConfigPath), "auth-settings.json") : null;

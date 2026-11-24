@@ -5,7 +5,7 @@
 // which a clean-up then deleted. The size and bot-count thresholds that were meant to tell test data from real data,
 // and the opt-in environment variable around them, are gone with that move: a left-over opt-in now does nothing.
 import { spawnSync } from "node:child_process";
-import { existsSync, renameSync, rmSync, statSync } from "node:fs";
+import { closeSync, constants, existsSync, lstatSync, openSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 
@@ -72,7 +72,9 @@ function defaultBackup(home: string, now: () => Date): string {
 
 /** A compressed copy of the folder `from` (its name, as it sits in its parent folder) at `backup`. */
 function archive(backup: string, from: string): boolean {
-  const made = spawnSync("tar", ["-czf", backup, "-C", dirname(from), basename(from)], { stdio: ["ignore", "ignore", "pipe"] });
+  const winTar = process.platform === "win32" ? join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe") : null;
+  const tarCmd = winTar && existsSync(winTar) ? winTar : "tar";
+  const made = spawnSync(tarCmd, ["-czf", backup, "-C", dirname(from), basename(from)], { stdio: ["ignore", "ignore", "pipe"] });
   if (made.error || made.status !== 0) {
     console.error(`migrate-data: the copy could not be written: ${made.error?.message ?? `tar exited with ${made.status}`}`);
     return false;
@@ -102,14 +104,24 @@ export type MigrateDataResult =
   | { ok: true; from: string; to: string; backup: string | null; repaired: string[] | null }
   | { ok: false; error: string };
 
+function entryStat(path: string) {
+  try {
+    return lstatSync(path);
+  } catch {
+    return null;
+  }
+}
+
 /** Why the move must not run. Reads only; nothing is moved or written while any of these hold. */
 export function migrateDataRefusal(
   { from, to, backup, env = process.env }: { from: string; to: string; backup: string | null; env: NodeJS.ProcessEnv },
   lease: (dir: string) => ReturnType<typeof describeDataDirLease> = describeDataDirLease,
 ): string | null {
-  if (!existsSync(from)) return `${from} is not there; nothing to move`;
+  const fromStat = entryStat(from);
+  if (!fromStat) return `${from} is not there; nothing to move`;
+  if (fromStat.isSymbolicLink() || !fromStat.isDirectory()) return `${from} is a symbolic link or not a folder; migrate it manually`;
   if (to === from) return "the old and the new folder are the same";
-  if (existsSync(to)) return `${to} already exists; nothing was moved. Two data folders cannot be merged by a move`;
+  if (entryStat(to)) return `${to} already exists; nothing was moved. Two data folders cannot be merged by a move`;
   if (env.OMB_DATA_DIR && resolve(env.OMB_DATA_DIR) === resolve(from)) {
     return "OMB_DATA_DIR names the old folder: after the move it would point at a folder that is gone. Unset it, then run this again";
   }
@@ -119,7 +131,7 @@ export function migrateDataRefusal(
   if (backup !== null) {
     const target = resolve(backup);
     if (target.startsWith(resolve(from) + sep)) return `the copy would be written inside the folder being moved: ${backup}`;
-    if (existsSync(target)) return `a file named ${backup} already exists; nothing was overwritten`;
+    if (entryStat(target)) return `a file named ${backup} already exists; nothing was overwritten`;
   }
   return null;
 }
@@ -131,19 +143,39 @@ export function migrateDataDir(options: MigrateDataOptions): MigrateDataResult {
   const backup = options.noBackup ? null : options.backup ?? defaultBackup(home, options.now ?? (() => new Date()));
   const env = options.env ?? process.env;
   const makeArchive = options.makeArchive ?? archive;
-  const refusal = migrateDataRefusal({ from, to, backup, env }, options.lease);
+  const leaseCheck = options.lease ?? describeDataDirLease;
+  const refusal = migrateDataRefusal({ from, to, backup, env }, leaseCheck);
   if (refusal !== null) return { ok: false, error: refusal };
-  if (backup !== null) {
-    if (!makeArchive(backup, from)) {
-      // Nothing named this path before (see migrateDataRefusal), so what is there now is a copy cut short.
-      rmSync(backup, { force: true });
-      return { ok: false, error: `the copy of ${from} could not be written, so nothing was moved` };
-    }
+  const lockFile = join(dirname(resolve(to)), `.tappoteambot-migrate-${basename(resolve(to))}.lock`);
+  let lockFd: number;
+  try {
+    lockFd = openSync(lockFile, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR, 0o600);
+    writeSync(lockFd, `${process.pid}\n`);
+  } catch (error) {
+    return { ok: false, error: `another migration may be running (${lockFile}): ${error instanceof Error ? error.message : String(error)}` };
   }
   try {
-    renameSync(from, to);
-  } catch (error) {
-    return { ok: false, error: `${from} could not be moved to ${to}: ${error instanceof Error ? error.message : String(error)}` };
+    if (backup !== null) {
+      if (!makeArchive(backup, from)) {
+        // Nothing named this path before (see migrateDataRefusal), so what is there now is a copy cut short.
+        rmSync(backup, { force: true });
+        return { ok: false, error: `the copy of ${from} could not be written, so nothing was moved` };
+      }
+      // Re-check lease after tar in case the app or server launched during archival.
+      const afterArchive = migrateDataRefusal({ from, to, backup: null, env }, leaseCheck);
+      if (afterArchive !== null) {
+        rmSync(backup, { force: true });
+        return { ok: false, error: afterArchive };
+      }
+    }
+    try {
+      renameSync(from, to);
+    } catch (error) {
+      return { ok: false, error: `${from} could not be moved to ${to}: ${error instanceof Error ? error.message : String(error)}` };
+    }
+  } finally {
+    try { closeSync(lockFd); } catch {}
+    rmSync(lockFile, { force: true });
   }
   const repaired = repairRenamedDataDirPaths(to);
   noteDataDirRenamed(from);
@@ -197,7 +229,11 @@ export function runMigrateDataCli(
     io.log(`Paths inside the data that name ${result.from} were left as they are: the repair knows the ~/.openmausbot folder only.`);
     return 0;
   }
-  const repaired = result.repaired?.length ?? 0;
+  if (result.repaired === null) {
+    io.log("Paths inside the data could not be checked or repaired; see earlier log.");
+    return 0;
+  }
+  const repaired = result.repaired.length;
   io.log(repaired ? `Paths inside the data that named the old folder were rewritten in ${repaired} file(s); their earlier copies are in ${join(result.to, ".backups", "path-repair-tappo-rename")}.`
     : "No path inside the data named the old folder.");
   return 0;

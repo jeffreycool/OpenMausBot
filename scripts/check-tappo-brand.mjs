@@ -37,6 +37,13 @@ expect("electron-builder nsis shortcutName", /^\s+shortcutName:\s*TappoTeamBot$/
 // New scheme first; the old one rides along only for the 30-day compat window (design D2).
 expect("electron-builder protocol schemes (new first, legacy for the compat window)", /^\s+schemes:\s*\[tappoteambot, openmausbot\]$/m.test(builder));
 expect("electron-builder publish repo", /^\s+repo:\s*TappoTeamBot$/m.test(builder));
+expect("electron-builder publish owner", /^\s+owner:\s*jeffreycool$/m.test(builder));
+expect("fork flag: electron/updater.mjs disables auto update",
+  /const AGENTCHAT_DISABLE_AUTO_UPDATE = true;/.test(read("electron/updater.mjs")) &&
+  /if \(AGENTCHAT_DISABLE_AUTO_UPDATE \|\| !app\.isPackaged\)/.test(read("electron/updater.mjs")));
+expect("fork flag: settings-index.ts hides cloud billing",
+  /const AGENTCHAT_HIDE_CLOUD_BILLING = true;/.test(read("src/components/settings/settings-index.ts")) &&
+  /!AGENTCHAT_HIDE_CLOUD_BILLING &&/.test(read("src/components/settings/settings-index.ts")));
 
 const pkg = JSON.parse(read("package.json"));
 expect("package.json name", pkg.name === "tappoteambot");
